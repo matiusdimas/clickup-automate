@@ -8,6 +8,7 @@ services:
     environment:
       - APP_ENV=production
       - APP_DEBUG=false
+      - APP_KEY=base64:/1BTRJqXzzHFKMc3ZWap4KDhqzQOAREbaqR44hgtF+g=
       - APP_URL=https://web-support-portal.lmd.co.id/clickup
       - ASSET_URL=https://web-support-portal.lmd.co.id/clickup
       - DB_CONNECTION=mysql
@@ -16,7 +17,12 @@ services:
       - DB_DATABASE=clickup
       - DB_USERNAME=clickup_user
       - DB_PASSWORD=clickup_secret
-      # Note: Tambahkan variabel env lainnya yang ada di .env lokal ke sini jika dibutuhkan saat production
+      - CLICKUP_API_KEY=pk_95553944_CPLT3VB9DV339BI2KY2DYC1MOD8C9P36
+      - CLICKUP_VERIFY_SSL=false
+      - API_BEARER_TOKEN=token-rahasia-super-kuat-12345
+      - SESSION_DRIVER=database
+      - QUEUE_CONNECTION=database
+      - CACHE_STORE=database
     depends_on:
       - clickup-db
     networks:
