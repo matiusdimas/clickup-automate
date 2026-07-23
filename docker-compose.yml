@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  clickup-app:
+    build: .
+    container_name: clickup-app
+    restart: always
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=https://web-support-portal.lmd.co.id/clickup
+      - ASSET_URL=https://web-support-portal.lmd.co.id/clickup
+      - DB_CONNECTION=mysql
+      - DB_HOST=clickup-db
+      - DB_PORT=3306
+      - DB_DATABASE=clickup
+      - DB_USERNAME=clickup_user
+      - DB_PASSWORD=clickup_secret
+      # Note: Tambahkan variabel env lainnya yang ada di .env lokal ke sini jika dibutuhkan saat production
+    depends_on:
+      - clickup-db
+    networks:
+      - proxy
+      - clickup-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.clickup.rule=Host(`web-support-portal.lmd.co.id`) && PathPrefix(`/clickup`)"
+      - "traefik.http.middlewares.clickup-strip.stripprefix.prefixes=/clickup"
+      - "traefik.http.middlewares.clickup-prefix.headers.customrequestheaders.X-Forwarded-Prefix=/clickup"
+      - "traefik.http.routers.clickup.middlewares=clickup-strip,clickup-prefix"
+      - "traefik.http.routers.clickup.entrypoints=websecure"
+      - "traefik.http.routers.clickup.tls=true"
+      - "traefik.http.services.clickup.loadbalancer.server.port=80"
+
+  clickup-db:
+    image: mysql:8.0
+    container_name: clickup-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: clickup_root_secret
+      MYSQL_DATABASE: clickup
+      MYSQL_USER: clickup_user
+      MYSQL_PASSWORD: clickup_secret
+    volumes:
+      - clickup-db-data:/var/lib/mysql
+    networks:
+      - clickup-internal
+
+networks:
+  proxy:
+    external: true
+  clickup-internal:
+    driver: bridge
+
+volumes:
+  clickup-db-data:
