@@ -1285,6 +1285,12 @@ class ClickUpService
             'tipe_aplikasi' => $task->tipe_aplikasi,
             'aplikasi' => $task->aplikasi,
             'status' => $task->status,
+            'description' => $task->description,
+            'requestor_name' => $task->requestor_name,
+            'resolution' => $task->resolution,
+            'technician' => $task->technician,
+            'created_time' => $task->created_time,
+            'resolved_time' => $task->resolved_time,
             'updated_at' => $task->updated_at?->toIso8601String(),
         ];
     }

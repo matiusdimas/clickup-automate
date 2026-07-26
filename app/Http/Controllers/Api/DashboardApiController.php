@@ -192,6 +192,8 @@ class DashboardApiController extends Controller
                 'tipe_aplikasi' => $task->tipe_aplikasi,
                 'aplikasi' => $task->aplikasi,
                 'status' => $task->status,
+                'description' => $task->description,
+                'resolution' => $task->resolution,
                 'technician' => $task->technician,
                 'requestor_name' => $task->requestor_name,
                 'created_time' => $task->created_time,

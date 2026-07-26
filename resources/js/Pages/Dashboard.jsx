@@ -241,6 +241,29 @@ export default function Dashboard() {
     const [ruleSaving, setRuleSaving] = useState(false);
     const [techMappingSaving, setTechMappingSaving] = useState(false);
     const [importSource, setImportSource] = useState('ebesha');
+    const [selectedTaskDetail, setSelectedTaskDetail] = useState(null);
+    const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+    const [loadingTaskDetail, setLoadingTaskDetail] = useState(false);
+
+    const openTaskModal = async (taskSummary) => {
+        setSelectedTaskDetail(taskSummary);
+        setIsTaskModalOpen(true);
+        setLoadingTaskDetail(true);
+
+        try {
+            const taskIdToFetch = taskSummary.id || taskSummary.clickup_task_id || taskSummary.tiket_id;
+            const response = await apiFetch(`${apiBase}/tasks/${taskIdToFetch}`);
+            const payload = await response.json();
+
+            if (response.ok && payload.success && payload.data) {
+                setSelectedTaskDetail(payload.data);
+            }
+        } catch {
+            // Keep initial taskSummary if fetch fails
+        } finally {
+            setLoadingTaskDetail(false);
+        }
+    };
 
     const loadOverview = async () => {
         setLoading(true);
@@ -1527,36 +1550,55 @@ export default function Dashboard() {
                                                 <th className="px-4 py-3 text-left font-medium">Module</th>
                                                 <th className="px-4 py-3 text-left font-medium">Status</th>
                                                 <th className="px-4 py-3 text-left font-medium">Updated</th>
+                                                <th className="px-4 py-3 text-center font-medium">Aksi</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-white/10 bg-slate-950/50">
                                             {loading ? (
                                                 <tr>
-                                                    <td className="px-4 py-5 text-slate-400" colSpan={5}>
+                                                    <td className="px-4 py-5 text-slate-400" colSpan={6}>
                                                         Loading cache...
                                                     </td>
                                                 </tr>
                                             ) : filteredTasks.length === 0 ? (
                                                 <tr>
-                                                    <td className="px-4 py-5 text-slate-400" colSpan={5}>
+                                                    <td className="px-4 py-5 text-slate-400" colSpan={6}>
                                                         Belum ada tiket di cache.
                                                     </td>
                                                 </tr>
                                             ) : (
                                                 filteredTasks.map((task) => (
-                                                    <tr key={task.id} className="hover:bg-white/5">
+                                                    <tr
+                                                        key={task.id}
+                                                        onClick={() => openTaskModal(task)}
+                                                        className="cursor-pointer hover:bg-white/10 transition-colors group"
+                                                    >
                                                         <td className="px-4 py-3">
-                                                            <span className="rounded-full bg-violet-400/10 px-3 py-1 text-xs font-semibold text-violet-200">
+                                                            <span className="rounded-full bg-violet-400/10 px-3 py-1 text-xs font-semibold text-violet-200 border border-violet-400/20 group-hover:border-violet-400/50">
                                                                 {task.tiket_id || '-'}
                                                             </span>
                                                         </td>
                                                         <td className="px-4 py-3 text-white">
-                                                            <div className="font-medium">{task.name}</div>
+                                                            <div className="font-medium group-hover:text-cyan-300 transition-colors">
+                                                                {task.name}
+                                                            </div>
                                                             <div className="text-xs text-slate-500">{task.clickup_task_id}</div>
                                                         </td>
                                                         <td className="px-4 py-3 text-slate-200">{task.tipe_aplikasi}</td>
                                                         <td className="px-4 py-3 text-slate-200">{task.status}</td>
                                                         <td className="px-4 py-3 text-slate-400">{formatDateTime(task.updated_at)}</td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    openTaskModal(task);
+                                                                }}
+                                                                className="rounded-lg bg-cyan-500/10 px-2.5 py-1 text-xs font-medium text-cyan-300 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors"
+                                                            >
+                                                                Detail
+                                                            </button>
+                                                        </td>
                                                     </tr>
                                                 ))
                                             )}
@@ -1566,6 +1608,155 @@ export default function Dashboard() {
                             </div>
                         </div>
                     </section>
+
+                    {/* Task Detail Modal */}
+                    {isTaskModalOpen && selectedTaskDetail ? (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md">
+                            <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-white/15 bg-slate-900 p-6 sm:p-8 shadow-2xl text-white">
+                                {/* Modal Header */}
+                                <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
+                                    <div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="rounded-full bg-violet-500/20 px-3 py-1 text-xs font-semibold text-violet-300 border border-violet-500/30">
+                                                Tiket #{selectedTaskDetail.tiket_id || selectedTaskDetail.id}
+                                            </span>
+                                            <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-semibold text-cyan-300 border border-cyan-500/30">
+                                                {selectedTaskDetail.tipe_aplikasi || selectedTaskDetail.aplikasi || 'MODULE'}
+                                            </span>
+                                            <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold uppercase text-emerald-300 border border-emerald-500/30">
+                                                {selectedTaskDetail.status || 'STATUS'}
+                                            </span>
+                                        </div>
+                                        <h2 className="mt-3 text-xl font-bold text-white leading-snug">
+                                            {selectedTaskDetail.name}
+                                        </h2>
+                                        <p className="mt-1 text-xs text-slate-400 flex flex-wrap items-center gap-2">
+                                            <span>ClickUp ID: <code className="text-cyan-400 font-mono">{selectedTaskDetail.clickup_task_id}</code></span>
+                                            {selectedTaskDetail.custom_id ? <span>• Custom ID: <code className="text-violet-400 font-mono">{selectedTaskDetail.custom_id}</code></span> : null}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsTaskModalOpen(false)}
+                                        className="rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white transition-colors text-lg font-bold"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+
+                                {/* Loading Indicator */}
+                                {loadingTaskDetail ? (
+                                    <div className="mt-3 py-2 text-xs text-cyan-400 flex items-center gap-2">
+                                        <span className="inline-block h-2 w-2 animate-ping rounded-full bg-cyan-400"></span>
+                                        Memuat detail dari <code className="bg-slate-800 px-1.5 py-0.5 rounded text-cyan-300">tasks/{selectedTaskDetail.id || selectedTaskDetail.clickup_task_id}</code>...
+                                    </div>
+                                ) : null}
+
+                                {/* Modal Body */}
+                                <div className="mt-6 space-y-6">
+                                    {/* API Route & External Link */}
+                                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-950/60 p-3 text-xs border border-white/10">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">REST API:</span>
+                                            <code className="font-mono text-cyan-300 bg-slate-900 px-2.5 py-1 rounded-lg border border-cyan-500/20">
+                                                GET /api/clickup/tasks/{selectedTaskDetail.id || selectedTaskDetail.clickup_task_id}
+                                            </code>
+                                        </div>
+                                        {selectedTaskDetail.clickup_task_id ? (
+                                            <a
+                                                href={`https://app.clickup.com/t/${selectedTaskDetail.clickup_task_id}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 text-xs text-violet-300 hover:text-violet-200 underline font-medium"
+                                            >
+                                                Buka di ClickUp ↗
+                                            </a>
+                                        ) : null}
+                                    </div>
+
+                                    {/* Description Section */}
+                                    <div>
+                                        <h3 className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-2 flex items-center gap-2">
+                                            <span>📝 Deskripsi Task</span>
+                                        </h3>
+                                        <div className="rounded-2xl border border-white/10 bg-slate-950/80 p-4 text-sm text-slate-200 leading-relaxed font-sans whitespace-pre-wrap max-h-80 overflow-y-auto">
+                                            {selectedTaskDetail.description ? (
+                                                selectedTaskDetail.description
+                                            ) : (
+                                                <span className="text-slate-500 italic">Tidak ada deskripsi pada task ini.</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Resolution Section */}
+                                    {selectedTaskDetail.resolution ? (
+                                        <div>
+                                            <h3 className="text-xs uppercase tracking-wider text-emerald-400 font-semibold mb-2 flex items-center gap-2">
+                                                <span>✅ Resolusi / Solusi</span>
+                                            </h3>
+                                            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-emerald-100 leading-relaxed whitespace-pre-wrap">
+                                                {selectedTaskDetail.resolution}
+                                            </div>
+                                        </div>
+                                    ) : null}
+
+                                    {/* Details Grid */}
+                                    <div>
+                                        <h3 className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-3">
+                                            Informasi Detail Tiket
+                                        </h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                            <div className="rounded-xl bg-slate-950/50 p-3 border border-white/5">
+                                                <span className="text-xs text-slate-400 block">Requestor</span>
+                                                <span className="font-medium text-white">{selectedTaskDetail.requestor_name || '-'}</span>
+                                            </div>
+                                            <div className="rounded-xl bg-slate-950/50 p-3 border border-white/5">
+                                                <span className="text-xs text-slate-400 block">Teknisi (Assignee)</span>
+                                                <span className="font-medium text-white">{selectedTaskDetail.technician || '-'}</span>
+                                            </div>
+                                            <div className="rounded-xl bg-slate-950/50 p-3 border border-white/5">
+                                                <span className="text-xs text-slate-400 block">Detail Aplikasi</span>
+                                                <span className="font-medium text-white">{selectedTaskDetail.aplikasi || selectedTaskDetail.subcategory || '-'}</span>
+                                            </div>
+                                            <div className="rounded-xl bg-slate-950/50 p-3 border border-white/5">
+                                                <span className="text-xs text-slate-400 block">Prioritas</span>
+                                                <span className="font-medium text-white">{selectedTaskDetail.priority || '-'}</span>
+                                            </div>
+                                            <div className="rounded-xl bg-slate-950/50 p-3 border border-white/5">
+                                                <span className="text-xs text-slate-400 block">Waktu Dibuat</span>
+                                                <span className="font-medium text-white">{selectedTaskDetail.created_time || formatDateTime(selectedTaskDetail.created_at)}</span>
+                                            </div>
+                                            <div className="rounded-xl bg-slate-950/50 p-3 border border-white/5">
+                                                <span className="text-xs text-slate-400 block">Waktu Selesai</span>
+                                                <span className="font-medium text-white">{selectedTaskDetail.resolved_time || '-'}</span>
+                                            </div>
+                                            <div className="rounded-xl bg-slate-950/50 p-3 border border-white/5">
+                                                <span className="text-xs text-slate-400 block">Tenggat Waktu SLA (Due Date)</span>
+                                                <span className="font-medium text-white">{selectedTaskDetail.due_by_time || '-'}</span>
+                                            </div>
+                                            <div className="rounded-xl bg-slate-950/50 p-3 border border-white/5">
+                                                <span className="text-xs text-slate-400 block">Status Overdue</span>
+                                                <span className={`font-medium ${selectedTaskDetail.overdue_status === 'true' || selectedTaskDetail.overdue_status === 'overdue' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                                    {selectedTaskDetail.overdue_status || '-'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Modal Footer */}
+                                <div className="mt-8 flex justify-end border-t border-white/10 pt-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsTaskModalOpen(false)}
+                                        className="rounded-xl bg-slate-800 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
+                                    >
+                                        Tutup
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
             </div>
         </AuthenticatedLayout>

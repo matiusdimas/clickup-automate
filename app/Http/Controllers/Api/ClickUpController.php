@@ -172,6 +172,7 @@ class ClickUpController extends Controller
             ->where('id', $id)
             ->orWhere('clickup_task_id', $id)
             ->orWhere('tiket_id', $id)
+            ->orWhere('custom_id', $id)
             ->first();
 
         if (! $task) {
