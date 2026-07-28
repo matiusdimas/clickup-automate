@@ -18,12 +18,12 @@ class CheckApiAuth
     {
         // 1. Check for static API_BEARER_TOKEN from .env
         $staticToken = env('API_BEARER_TOKEN');
-        if (!empty($staticToken) && $request->bearerToken() === $staticToken) {
+        if (!empty($staticToken) && ($request->bearerToken() === $staticToken || $request->header('X-Api-Key') === $staticToken)) {
             return $next($request);
         }
 
-        // 2. Fallback to Sanctum stateful authentication (for local React dashboard)
-        if (Auth::guard('sanctum')->check()) {
+        // 2. Fallback to Sanctum stateful authentication / Web Session (for local React dashboard)
+        if (Auth::guard('sanctum')->check() || Auth::check()) {
             return $next($request);
         }
 
