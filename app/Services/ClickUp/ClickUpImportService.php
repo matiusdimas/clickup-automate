@@ -208,8 +208,9 @@ class ClickUpImportService
                         'b8c71da9-681b-4418-80e5-9dae2565e70a' => $payload['nomor_tiket'],
                     ];
 
-                    if (filled($payload['ticket_category'])) {
-                        $categoryId = $this->normalizer->mapTicketCategory($payload['ticket_category']);
+                    $rawCat = $payload['ticket_category'] ?? $payload['category'] ?? data_get($row, 'category') ?? data_get($row, 'ticket_category') ?? data_get($row, 'request type') ?? '';
+                    if (filled($rawCat)) {
+                        $categoryId = $this->normalizer->mapTicketCategory($rawCat);
                         if ($categoryId) {
                             $customFieldValues['ac661cf6-6078-4c36-b5e3-da7c74ddf7a8'] = $categoryId;
                         }
@@ -289,8 +290,9 @@ class ClickUpImportService
                     ];
                 }
 
-                if (filled($payload['ticket_category'])) {
-                    $categoryId = $this->normalizer->mapTicketCategory($payload['ticket_category']);
+                $rawCat = $payload['ticket_category'] ?? $payload['category'] ?? data_get($row, 'category') ?? data_get($row, 'ticket_category') ?? data_get($row, 'request type') ?? '';
+                if (filled($rawCat)) {
+                    $categoryId = $this->normalizer->mapTicketCategory($rawCat);
                     if ($categoryId) {
                         $taskPayload['custom_fields'][] = [
                             'id' => 'ac661cf6-6078-4c36-b5e3-da7c74ddf7a8',

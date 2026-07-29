@@ -427,11 +427,12 @@ class ClickUpSyncService
         ];
 
         foreach ($metricsFields as $mField) {
-            if (filled(data_get($extraData, $mField))) {
+            $val = data_get($extraData, $mField) ?: data_get($extraData, $mField === 'ticket_category' ? 'category' : $mField);
+            if (filled($val)) {
                 if ($mField === 'ticket_category') {
-                    $attributes['category'] = data_get($extraData, $mField);
+                    $attributes['category'] = $val;
                 } else {
-                    $attributes[$mField] = data_get($extraData, $mField);
+                    $attributes[$mField] = $val;
                 }
             }
         }
