@@ -27,7 +27,7 @@ class ClickUpImportService
             $existingToken = Cache::get(self::IMPORT_LOCK_KEY);
             $progress = Cache::get("import_progress_{$existingToken}");
 
-            if (!$progress || in_array($progress['status'] ?? '', ['completed', 'failed', 'missing'])) {
+            if (!$progress || in_array($progress['status'] ?? '', ['completed', 'failed', 'missing', 'not_found', 'done']) || ($importToken && $existingToken === $importToken)) {
                 Cache::forget(self::IMPORT_LOCK_KEY);
             } else {
                 return [

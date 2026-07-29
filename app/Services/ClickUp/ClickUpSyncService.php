@@ -44,7 +44,7 @@ class ClickUpSyncService
             $progress = Cache::get($this->progressKey($existingToken));
 
             // Auto-clear stale or completed lock
-            if (!$progress || in_array($progress['status'] ?? '', ['done', 'failed', 'missing'])) {
+            if (!$progress || in_array($progress['status'] ?? '', ['done', 'failed', 'missing', 'not_found', 'completed']) || ($syncToken && $existingToken === $syncToken)) {
                 Cache::forget(self::SYNC_LOCK_KEY);
             } else {
                 return [
