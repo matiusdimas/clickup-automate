@@ -674,7 +674,6 @@ export default function Dashboard() {
         setImporting(true);
 
         // Langkah 1: Sync ClickUp terlebih dahulu
-        setActionMessage('Langkah 1/2: Menyinkronkan data ClickUp terbaru sebelum import...');
         try {
             await syncClickUp(true);
         } catch (error) {
@@ -685,6 +684,16 @@ export default function Dashboard() {
 
         // Langkah 2: Import data Excel
         setActionMessage('Langkah 2/2: Memproses import Excel ke ClickUp & database lokal...');
+        const importToken = crypto.randomUUID();
+        setImportProgress({
+            import_token: importToken,
+            status: 'running',
+            processed_rows: 0,
+            total_rows: importPreview.length,
+            progress_percent: 0,
+        });
+
+        startImportPolling(importToken);
 
         try {
             const payloadRows = importPreview.map(({ review_status, review_reason, ...row }) => row);
@@ -696,6 +705,7 @@ export default function Dashboard() {
                 body: JSON.stringify({
                     rows: payloadRows,
                     source_format: importSource,
+                    import_token: importToken,
                 }),
             });
 
@@ -704,17 +714,6 @@ export default function Dashboard() {
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || 'Gagal memproses import.');
             }
-
-            const activeToken = payload.data.import_token;
-            localStorage.setItem('clickup_active_import_token', activeToken);
-
-            if (payload.data.status === 'already_running') {
-                setActionMessage('Mengikuti progress import yang sedang berjalan di sesi lain...');
-            } else {
-                setActionMessage('Memproses import ke ClickUp & database lokal...');
-            }
-
-            startImportPolling(activeToken);
         } catch (error) {
             setActionMessage(error.message);
             setImporting(false);
@@ -799,17 +798,20 @@ export default function Dashboard() {
 
     const syncClickUp = async (throwOnError = false) => {
         setSyncing(true);
+        const syncToken = crypto.randomUUID();
+        startSyncPolling(syncToken);
+
         if (!throwOnError) {
-            setActionMessage('');
+            setActionMessage('Sinkronisasi dimulai...');
         } else {
-            setActionMessage('Menyinkronkan data dari ClickUp sebelum import...');
+            setActionMessage('Langkah 1/2: Menyinkronkan data ClickUp terbaru sebelum import...');
         }
 
         try {
             const response = await apiFetch(`${apiBase}/sync`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
+                body: JSON.stringify({ sync_token: syncToken }),
             });
             const payload = await response.json();
 
@@ -817,16 +819,6 @@ export default function Dashboard() {
                 throw new Error(payload.message || 'Gagal sinkronisasi ClickUp.');
             }
 
-            const activeToken = payload.sync_token;
-            localStorage.setItem('clickup_active_sync_token', activeToken);
-
-            if (payload.status === 'already_running') {
-                setActionMessage('Mengikuti progress sinkronisasi yang sedang berjalan di sesi lain...');
-            } else {
-                setActionMessage('Sinkronisasi dimulai...');
-            }
-
-            startSyncPolling(activeToken);
             return true;
         } catch (error) {
             setActionMessage(error.message);
