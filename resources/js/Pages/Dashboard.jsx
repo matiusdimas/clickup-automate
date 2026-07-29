@@ -474,15 +474,18 @@ export default function Dashboard() {
     };
 
     const fetchSyncProgress = async (syncToken) => {
-        const response = await apiFetch(`${apiBase}/sync/${syncToken}/progress`);
-        const payload = await response.json();
+        try {
+            const response = await apiFetch(`${apiBase}/sync/${syncToken}/progress`);
+            const payload = await response.json();
 
-        if (!response.ok || !payload.success) {
-            throw new Error(payload.message || 'Gagal mengambil progress sync.');
+            if (response.ok && payload.success && payload.data && payload.data.status !== 'not_found') {
+                setSyncProgress(payload.data);
+                return payload.data;
+            }
+            return payload?.data ?? null;
+        } catch {
+            return null;
         }
-
-        setSyncProgress(payload.data);
-        return payload.data;
     };
 
     const handleImportFile = async (event) => {
@@ -654,7 +657,7 @@ export default function Dashboard() {
             const response = await apiFetch(`${apiBase}/import/${importToken}/progress`);
             const payload = await response.json();
 
-            if (response.ok && payload.success) {
+            if (response.ok && payload.success && payload.data && payload.data.status !== 'not_found') {
                 setImportProgress(payload.data);
                 return payload.data;
             }
