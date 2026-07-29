@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head } from '@inertiajs/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 const apiBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/clickup')
@@ -265,6 +265,64 @@ export default function Dashboard() {
         }
     };
 
+    const activeSyncTimer = useRef(null);
+    const activeImportTimer = useRef(null);
+
+    const startSyncPolling = (token) => {
+        if (!token) return;
+        setSyncing(true);
+        localStorage.setItem('clickup_active_sync_token', token);
+        fetchSyncProgress(token);
+
+        if (activeSyncTimer.current) {
+            clearInterval(activeSyncTimer.current);
+        }
+
+        activeSyncTimer.current = setInterval(async () => {
+            try {
+                const data = await fetchSyncProgress(token);
+                if (data?.status === 'done' || data?.status === 'failed' || data?.status === 'missing' || !data) {
+                    clearInterval(activeSyncTimer.current);
+                    activeSyncTimer.current = null;
+                    setSyncing(false);
+                    localStorage.removeItem('clickup_active_sync_token');
+                    if (data?.status === 'done') {
+                        setActionMessage('Sinkronisasi selesai.');
+                    }
+                }
+            } catch (error) {
+                clearInterval(activeSyncTimer.current);
+                activeSyncTimer.current = null;
+                setSyncing(false);
+                localStorage.removeItem('clickup_active_sync_token');
+            }
+        }, 1000);
+    };
+
+    const startImportPolling = (token) => {
+        if (!token) return;
+        setImporting(true);
+        localStorage.setItem('clickup_active_import_token', token);
+        fetchImportProgress(token);
+
+        if (activeImportTimer.current) {
+            clearInterval(activeImportTimer.current);
+        }
+
+        activeImportTimer.current = setInterval(async () => {
+            const data = await fetchImportProgress(token);
+            if (data?.status === 'completed' || data?.status === 'failed' || !data) {
+                clearInterval(activeImportTimer.current);
+                activeImportTimer.current = null;
+                setImporting(false);
+                localStorage.removeItem('clickup_active_import_token');
+                if (data?.status === 'completed') {
+                    setActionMessage('Import selesai diproses.');
+                }
+            }
+        }, 1000);
+    };
+
     const loadOverview = async () => {
         setLoading(true);
         setPageError('');
@@ -278,6 +336,13 @@ export default function Dashboard() {
             }
 
             setOverview(payload);
+
+            if (payload.active_sync_token) {
+                startSyncPolling(payload.active_sync_token);
+            }
+            if (payload.active_import_token) {
+                startImportPolling(payload.active_import_token);
+            }
         } catch (error) {
             setPageError(error.message);
         } finally {
@@ -313,63 +378,6 @@ export default function Dashboard() {
         loadOverview();
         loadRules();
         loadTechMappings();
-
-        // Resume active import progress if user refreshes page while import is running
-        const savedImportToken = localStorage.getItem('clickup_active_import_token');
-        if (savedImportToken) {
-            fetchImportProgress(savedImportToken).then((data) => {
-                if (data && data.status === 'running') {
-                    setImporting(true);
-                    setImportProgress(data);
-                    let polling = true;
-                    const timer = window.setInterval(async () => {
-                        if (!polling) return;
-                        const latest = await fetchImportProgress(savedImportToken);
-                        if (latest?.status === 'completed' || latest?.status === 'failed' || !latest) {
-                            polling = false;
-                            window.clearInterval(timer);
-                            setImporting(false);
-                            localStorage.removeItem('clickup_active_import_token');
-                            loadOverview();
-                        }
-                    }, 1000);
-                } else {
-                    localStorage.removeItem('clickup_active_import_token');
-                }
-            });
-        }
-
-        // Resume active sync progress if user refreshes page while sync is running
-        const savedSyncToken = localStorage.getItem('clickup_active_sync_token');
-        if (savedSyncToken) {
-            fetchSyncProgress(savedSyncToken).then((data) => {
-                if (data && data.status === 'running') {
-                    setSyncing(true);
-                    setSyncProgress(data);
-                    let polling = true;
-                    const timer = window.setInterval(async () => {
-                        if (!polling) return;
-                        try {
-                            const latest = await fetchSyncProgress(savedSyncToken);
-                            if (latest?.status === 'done' || latest?.status === 'failed' || latest?.status === 'missing' || !latest) {
-                                polling = false;
-                                window.clearInterval(timer);
-                                setSyncing(false);
-                                localStorage.removeItem('clickup_active_sync_token');
-                                loadOverview();
-                            }
-                        } catch {
-                            polling = false;
-                            window.clearInterval(timer);
-                            setSyncing(false);
-                            localStorage.removeItem('clickup_active_sync_token');
-                        }
-                    }, 1000);
-                } else {
-                    localStorage.removeItem('clickup_active_sync_token');
-                }
-            });
-        }
     }, []);
 
     const modules = overview?.modules ?? [];
@@ -663,40 +671,14 @@ export default function Dashboard() {
             return;
         }
 
-        const importToken = crypto.randomUUID();
-        localStorage.setItem('clickup_active_import_token', importToken);
-        setImporting(true);
-        setImportProgress({
-            import_token: importToken,
-            status: 'running',
-            processed_rows: 0,
-            total_rows: importPreview.length,
-            progress_percent: 0,
-        });
-
         try {
             await syncClickUp(true);
         } catch (error) {
-            setImporting(false);
-            setImportProgress(null);
-            localStorage.removeItem('clickup_active_import_token');
             return;
         }
 
-        setActionMessage('Memproses import ke ClickUp & database lokal...');
-
-        let polling = true;
-        const timer = window.setInterval(async () => {
-            if (!polling) {
-                return;
-            }
-
-            const data = await fetchImportProgress(importToken);
-            if (data?.status === 'completed' || data?.status === 'failed') {
-                polling = false;
-                window.clearInterval(timer);
-            }
-        }, 1000);
+        setActionMessage('Memulai proses import ke ClickUp & database lokal...');
+        setImporting(true);
 
         try {
             const payloadRows = importPreview.map(({ review_status, review_reason, ...row }) => row);
@@ -708,7 +690,6 @@ export default function Dashboard() {
                 body: JSON.stringify({
                     rows: payloadRows,
                     source_format: importSource,
-                    import_token: importToken,
                 }),
             });
 
@@ -718,19 +699,19 @@ export default function Dashboard() {
                 throw new Error(payload.message || 'Gagal memproses import.');
             }
 
-            setImportResult(payload.data ?? null);
-            const summary = payload.data ?? {};
-            setActionMessage(
-                `Import selesai. Created: ${summary.created ?? 0}, Updated: ${summary.updated ?? 0}, Skipped: ${summary.skipped ?? 0}, Failed: ${summary.failed ?? 0}`,
-            );
-            await loadOverview();
+            const activeToken = payload.data.import_token;
+            localStorage.setItem('clickup_active_import_token', activeToken);
+
+            if (payload.data.status === 'already_running') {
+                setActionMessage('Mengikuti progress import yang sedang berjalan di sesi lain...');
+            } else {
+                setActionMessage('Memproses import ke ClickUp & database lokal...');
+            }
+
+            startImportPolling(activeToken);
         } catch (error) {
             setActionMessage(error.message);
-        } finally {
-            polling = false;
-            window.clearInterval(timer);
             setImporting(false);
-            localStorage.removeItem('clickup_active_import_token');
         }
     };
 
@@ -811,77 +792,41 @@ export default function Dashboard() {
     };
 
     const syncClickUp = async (throwOnError = false) => {
-        const syncToken = crypto.randomUUID();
-        localStorage.setItem('clickup_active_sync_token', syncToken);
         setSyncing(true);
         if (!throwOnError) {
             setActionMessage('');
         } else {
             setActionMessage('Menyinkronkan data dari ClickUp sebelum import...');
         }
-        setSyncProgress({
-            sync_token: syncToken,
-            status: 'running',
-            summary: {
-                total_modules: 0,
-                completed_modules: 0,
-                fetched_tasks: 0,
-                cached_tasks: 0,
-                progress_percent: 0,
-            },
-            modules: [],
-        });
-
-        let polling = true;
-        const timer = window.setInterval(async () => {
-            if (!polling) {
-                return;
-            }
-
-            try {
-                const data = await fetchSyncProgress(syncToken);
-
-                if (data?.status === 'done' || data?.status === 'failed' || data?.status === 'missing') {
-                    window.clearInterval(timer);
-                    polling = false;
-                }
-            } catch (error) {
-                window.clearInterval(timer);
-                polling = false;
-            }
-        }, 1000);
 
         try {
-            const syncRequest = apiFetch(`${apiBase}/sync`, {
+            const response = await apiFetch(`${apiBase}/sync`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ sync_token: syncToken }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
             });
-
-            await fetchSyncProgress(syncToken);
-
-            const response = await syncRequest;
             const payload = await response.json();
 
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || 'Gagal sinkronisasi ClickUp.');
             }
 
-            setActionMessage(payload.message || 'Sinkronisasi selesai.');
-            setSyncProgress(payload.progress ?? null);
-            await loadOverview();
+            const activeToken = payload.sync_token;
+            localStorage.setItem('clickup_active_sync_token', activeToken);
+
+            if (payload.status === 'already_running') {
+                setActionMessage('Mengikuti progress sinkronisasi yang sedang berjalan di sesi lain...');
+            } else {
+                setActionMessage('Sinkronisasi dimulai...');
+            }
+
+            startSyncPolling(activeToken);
             return true;
         } catch (error) {
             setActionMessage(error.message);
+            setSyncing(false);
             if (throwOnError) throw error;
             return false;
-        } finally {
-            polling = false;
-            window.clearInterval(timer);
-            setSyncing(false);
-            localStorage.removeItem('clickup_active_sync_token');
         }
     };
 

@@ -3,23 +3,23 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+use App\Http\Requests\StoreTechnicianMappingRequest;
+use App\Http\Requests\UpdateTechnicianMappingRequest;
+use App\Models\TechnicianMapping;
+use Illuminate\Http\JsonResponse;
 
 class TechnicianMappingController extends Controller
 {
-    public function index()
+    public function index(): JsonResponse
     {
-        return response()->json(\App\Models\TechnicianMapping::all());
+        return response()->json(TechnicianMapping::all());
     }
 
-    public function store(Request $request)
+    public function store(StoreTechnicianMappingRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'original_name' => 'required|string',
-            'mapped_name' => 'required|string',
-        ]);
+        $validated = $request->validated();
 
-        $mapping = \App\Models\TechnicianMapping::updateOrCreate(
+        $mapping = TechnicianMapping::updateOrCreate(
             ['original_name' => $validated['original_name']],
             ['mapped_name' => $validated['mapped_name']]
         );
@@ -27,9 +27,9 @@ class TechnicianMappingController extends Controller
         return response()->json(['message' => 'Mapping saved', 'mapping' => $mapping]);
     }
 
-    public function show($id)
+    public function show($id): JsonResponse
     {
-        $mapping = \App\Models\TechnicianMapping::find($id);
+        $mapping = TechnicianMapping::find($id);
 
         if (!$mapping) {
             return response()->json(['message' => 'Mapping not found'], 404);
@@ -38,27 +38,24 @@ class TechnicianMappingController extends Controller
         return response()->json($mapping);
     }
 
-    public function update(Request $request, $id)
+    public function update(UpdateTechnicianMappingRequest $request, $id): JsonResponse
     {
-        $mapping = \App\Models\TechnicianMapping::find($id);
+        $mapping = TechnicianMapping::find($id);
 
         if (!$mapping) {
             return response()->json(['message' => 'Mapping not found'], 404);
         }
 
-        $validated = $request->validate([
-            'original_name' => 'sometimes|string',
-            'mapped_name' => 'sometimes|string',
-        ]);
+        $validated = $request->validated();
 
         $mapping->update($validated);
 
         return response()->json(['message' => 'Mapping updated', 'mapping' => $mapping]);
     }
 
-    public function destroy($id)
+    public function destroy($id): JsonResponse
     {
-        $mapping = \App\Models\TechnicianMapping::findOrFail($id);
+        $mapping = TechnicianMapping::findOrFail($id);
         $mapping->delete();
 
         return response()->json(['message' => 'Mapping deleted']);
