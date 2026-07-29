@@ -18,7 +18,12 @@ class ClickUpSyncController extends Controller
     {
         $validated = $request->validate([
             'sync_token' => ['nullable', 'string', 'max:100'],
+            'force' => ['nullable', 'boolean'],
         ]);
+
+        if ($request->boolean('force')) {
+            \Illuminate\Support\Facades\Cache::forget('clickup:sync_active_lock');
+        }
 
         try {
             $startData = $this->syncService->startSync($validated['sync_token'] ?? null);
@@ -26,13 +31,15 @@ class ClickUpSyncController extends Controller
             if ($startData['status'] === 'started') {
                 $token = $startData['sync_token'];
 
-                // Release session lock immediately so Chrome B, Postman, and /overview are NEVER blocked!
-                if ($request->hasSession()) {
-                    $request->session()->save();
-                }
+                // Launch background process asynchronously so web server is NEVER blocked
+                $artisanPath = base_path('artisan');
+                $phpExecutable = PHP_BINARY ?: 'php';
 
-                // Run sync synchronously in Worker 1 (session lock is released!)
-                $this->syncService->runSync($token);
+                if (str_starts_with(strtoupper(PHP_OS), 'WIN')) {
+                    pclose(popen("start /B \"\" \"{$phpExecutable}\" \"{$artisanPath}\" clickup:sync {$token}", "r"));
+                } else {
+                    exec("\"{$phpExecutable}\" \"{$artisanPath}\" clickup:sync {$token} > /dev/null 2>&1 &");
+                }
             }
 
             return response()->json([
