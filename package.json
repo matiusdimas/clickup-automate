@@ -4,7 +4,9 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "concurrently -c \"#93c5fd,#c4b5fd\" \"php artisan serve\" \"vite\" --names=server,vite --kill-others"
+        "dev": "concurrently -c \"#93c5fd,#c4b5fd\" \"php artisan serve\" \"vite\" --names=server,vite --kill-others",
+        "pentest": "py scripts/pentest.py || python3 scripts/pentest.py || python scripts/pentest.py",
+        "stresstest": "py scripts/stresstest.py || python3 scripts/stresstest.py || python scripts/stresstest.py"
     },
     "devDependencies": {
         "@headlessui/react": "^2.0.0",

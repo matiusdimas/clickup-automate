@@ -146,6 +146,14 @@ class ClickUpService
                 }
 
                 if ($response->failed()) {
+                    if ($response->status() === 429) {
+                        // Rate limit hit: wait for rate limit reset/backoff and retry on next loop iteration without marking done
+                        $retryAfter = $response->header('Retry-After');
+                        $sleepSec = ($retryAfter && is_numeric($retryAfter)) ? (int) $retryAfter : 3;
+                        sleep(min(10, max(1, $sleepSec)));
+                        continue;
+                    }
+
                     $moduleState['status'] = 'failed';
                     $moduleState['error'] = $response->json('err') ?? $response->body();
                     $moduleState['done'] = true;
@@ -194,6 +202,9 @@ class ClickUpService
                 $moduleStates[$moduleName] = $moduleState;
                 $progress = $this->syncProgressFromStates($syncToken, $moduleStates, $cachedTasks, $fetchedTasks);
             }
+
+            // Micro-throttle between page requests to avoid hitting rate limits
+            usleep(200000);
         }
 
         $finalModules = array_values($moduleStates);
@@ -222,9 +233,6 @@ class ClickUpService
             throw new RuntimeException('CLICKUP_API_KEY belum diatur di config/services.php.');
         }
 
-        $totalRows = count($rows);
-        $processed = 0;
-
         $results = [
             'created' => 0,
             'updated' => 0,
@@ -236,84 +244,243 @@ class ClickUpService
         $rules = ClickUpImportRule::where('source_format', $sourceFormat)->get();
         $techMappings = \App\Models\TechnicianMapping::all();
 
+        // Deduplicate rows by ticket number alone within the same import batch
+        $seenTikets = [];
+        $uniqueRows = [];
+
         foreach ($rows as $row) {
-            $processed++;
-            if ($importToken) {
-                Cache::put("import_progress_{$importToken}", [
-                    'import_token' => $importToken,
-                    'status' => $processed >= $totalRows ? 'completed' : 'running',
-                    'processed_rows' => $processed,
-                    'total_rows' => $totalRows,
-                    'progress_percent' => $totalRows > 0 ? (int) round(($processed / $totalRows) * 100) : 100,
-                ], now()->addHours(1));
+            $normPayload = $this->normalizeImportRow($row, $rules, $techMappings);
+            $rawTiket = trim((string) ($normPayload['nomor_tiket'] ?? ''));
+            $cleanKey = $this->cleanTiketId($rawTiket);
+
+            if (filled($cleanKey)) {
+                if (isset($seenTikets[$cleanKey])) {
+                    $results['skipped']++;
+                    $results['details'][] = [
+                        'nomor_tiket' => $rawTiket,
+                        'aplikasi' => $normPayload['aplikasi'],
+                        'status' => 'skipped',
+                        'message' => 'Data duplikat dalam file import (di-skip agar unik).',
+                    ];
+                    continue;
+                }
+                $seenTikets[$cleanKey] = true;
             }
 
-            $payload = $this->normalizeImportRow($row, $rules, $techMappings);
-            $payload['generate'] = strtoupper(trim($sourceFormat));
+            $uniqueRows[] = $row;
+        }
 
-            if (blank($payload['nomor_tiket'])) {
-                $results['skipped']++;
-                $results['details'][] = [
-                    'nomor_tiket' => $payload['nomor_tiket'],
-                    'aplikasi' => $payload['aplikasi'],
-                    'status' => 'skipped',
-                    'message' => 'Nomor tiket kosong.',
-                ];
-                continue;
-            }
+        $rows = $uniqueRows;
+        $totalRows = count($rows);
+        $processed = 0;
 
-            $appId = $this->mapAppCategory($payload['aplikasi']);
+        foreach ($rows as $row) {
+            try {
+                $payload = $this->normalizeImportRow($row, $rules, $techMappings);
+                $payload['generate'] = strtoupper(trim($sourceFormat));
 
-            if (filled($payload['aplikasi']) && !$appId) {
-                $results['skipped']++;
-                $results['details'][] = [
-                    'nomor_tiket' => $payload['nomor_tiket'],
-                    'aplikasi' => $payload['aplikasi'],
-                    'status' => 'skipped',
-                    'message' => 'Nama aplikasi tidak valid/di-skip.',
-                ];
-                continue;
-            }
+                if (blank($payload['nomor_tiket'])) {
+                    $results['skipped']++;
+                    $results['details'][] = [
+                        'nomor_tiket' => $payload['nomor_tiket'] ?? 'N/A',
+                        'aplikasi' => $payload['aplikasi'] ?? 'N/A',
+                        'status' => 'skipped',
+                        'message' => 'Nomor tiket kosong.',
+                    ];
+                    continue;
+                }
 
-            // Always use the primary/first configured active module since we are consolidating to 1 list
-            $module = ClickUpModule::query()->where('is_active', true)->first();
+                $appId = $this->mapAppCategory($payload['aplikasi']);
 
-            if (! $module) {
-                $results['skipped']++;
-                $results['details'][] = [
-                    'nomor_tiket' => $payload['nomor_tiket'],
-                    'aplikasi' => $payload['aplikasi'],
-                    'status' => 'skipped',
-                    'message' => 'Sistem belum memiliki Module aktif yang dikonfigurasi. Harap buat minimal 1 module di Dashboard.',
-                ];
-                continue;
-            }
+                if (filled($payload['aplikasi']) && !$appId) {
+                    $results['skipped']++;
+                    $results['details'][] = [
+                        'nomor_tiket' => $payload['nomor_tiket'],
+                        'aplikasi' => $payload['aplikasi'],
+                        'status' => 'skipped',
+                        'message' => 'Nama aplikasi tidak valid/di-skip.',
+                    ];
+                    continue;
+                }
 
-            $localTask = ClickUpTaskCache::query()
-                ->where('tipe_aplikasi', $payload['aplikasi'])
-                ->where('tiket_id', $payload['nomor_tiket'])
-                ->first();
+                // Always use the primary/first configured active module since we are consolidating to 1 list
+                $module = ClickUpModule::query()->where('is_active', true)->first();
 
-            $briefParts = [];
-            $briefParts[] = "Technician: " . ($payload['technician'] ?: '-');
-            $briefParts[] = "First Response: " . ($payload['response_date'] ?: '-');
-            $briefParts[] = "Tanggal Tenggat Tiket SLA: " . ($payload['due_by_time'] ?: '-');
-            $briefParts[] = "Overdue Breach: " . ($payload['overdue_status'] ?: '-');
-            $briefParts[] = "Overdue Sama Siapa: " . ($payload['overdue_by'] ?: '-');
-            $briefParts[] = "Di Stopclock: " . ($payload['hold_time'] ?: '-');
-            $briefParts[] = "Item: " . ($payload['item'] ?: '-');
-            $briefParts[] = "Priority: " . ($payload['priority'] ?: '-');
-            
-            if (filled($payload['description'])) {
-                $briefParts[] = "\n" . $payload['description'];
-            }
-            $finalBrief = implode("\n", $briefParts);
+                if (! $module) {
+                    $results['skipped']++;
+                    $results['details'][] = [
+                        'nomor_tiket' => $payload['nomor_tiket'],
+                        'aplikasi' => $payload['aplikasi'],
+                        'status' => 'skipped',
+                        'message' => 'Sistem belum memiliki Module aktif yang dikonfigurasi. Harap buat minimal 1 module di Dashboard.',
+                    ];
+                    continue;
+                }
 
-            if ($localTask) {
-                $response = $this->client($apiKey)->put("/task/{$localTask->clickup_task_id}", [
+                $cleanTiket = $this->cleanTiketId($payload['nomor_tiket']);
+
+                $localTask = ClickUpTaskCache::query()
+                    ->where(function ($q) use ($payload, $cleanTiket) {
+                        $q->where('tiket_id', $payload['nomor_tiket'])
+                          ->orWhere('tiket_id', $cleanTiket)
+                          ->orWhere('tiket_id', '#' . $cleanTiket);
+                    })
+                    ->first();
+
+                $briefParts = [];
+                $briefParts[] = "Technician: " . ($payload['technician'] ?: '-');
+                $briefParts[] = "First Response: " . ($payload['response_date'] ?: '-');
+                $briefParts[] = "Tanggal Tenggat Tiket SLA: " . ($payload['due_by_time'] ?: '-');
+                $briefParts[] = "Overdue Breach: " . ($payload['overdue_status'] ?: '-');
+                $briefParts[] = "Overdue Sama Siapa: " . ($payload['overdue_by'] ?: '-');
+                $briefParts[] = "Di Stopclock: " . ($payload['hold_time'] ?: '-');
+                $briefParts[] = "Item: " . ($payload['item'] ?: '-');
+                $briefParts[] = "Priority: " . ($payload['priority'] ?: '-');
+
+                if (filled($payload['description'])) {
+                    $briefParts[] = "\n" . $payload['description'];
+                }
+                $finalBrief = implode("\n", $briefParts);
+
+                if ($localTask) {
+                    // Consolidate custom field updates into a single payload to drastically minimize API requests & avoid rate limits
+                    $updateFields = [];
+
+                    if (filled($finalBrief)) {
+                        $updateFields[] = [
+                            'id' => 'c0e86b86-d278-43e5-aebe-b9ea20839e9f',
+                            'value' => $finalBrief,
+                        ];
+                    }
+
+                    if (filled($payload['requestor_name'])) {
+                        $updateFields[] = [
+                            'id' => 'dfce0320-ea00-47b1-9cb6-c3ea4cbb3874',
+                            'value' => $payload['requestor_name'],
+                        ];
+                    }
+
+                    if (filled($payload['resolution'])) {
+                        $updateFields[] = [
+                            'id' => '07f620f4-500b-4680-bd94-39fb6fcab5fe',
+                            'value' => $payload['resolution'],
+                        ];
+                    }
+
+                    if (filled($payload['ticket_category'])) {
+                        $categoryId = $this->mapTicketCategory($payload['ticket_category']);
+                        if ($categoryId) {
+                            $updateFields[] = [
+                                'id' => 'ac661cf6-6078-4c36-b5e3-da7c74ddf7a8',
+                                'value' => $categoryId,
+                            ];
+                        }
+                    }
+
+                    if (filled($payload['aplikasi'])) {
+                        $appId = $this->mapAppCategory($payload['aplikasi']);
+                        if ($appId) {
+                            $updateFields[] = [
+                                'id' => 'aec0cf66-4c70-41e1-9b61-311d4d1a8eb5',
+                                'value' => $appId,
+                            ];
+                        }
+                    }
+
+                    $updatePayload = [
+                        'name' => $this->buildTaskName($payload),
+                        'status' => $payload['status'],
+                    ];
+
+                    if (!empty($updateFields)) {
+                        $updatePayload['custom_fields'] = $updateFields;
+                    }
+
+                    $response = $this->requestWithRetry(fn () => $this->client($apiKey)->put("/task/{$localTask->clickup_task_id}", $updatePayload));
+
+                    if ($response->failed() && str_contains(strtolower($response->body()), 'cannot find the custom field')) {
+                        // Fallback: Retry update without custom_fields array if this list doesn't have matching custom fields
+                        $fallbackPayload = [
+                            'name' => $this->buildTaskName($payload),
+                            'status' => $payload['status'],
+                        ];
+                        $response = $this->requestWithRetry(fn () => $this->client($apiKey)->put("/task/{$localTask->clickup_task_id}", $fallbackPayload));
+                    }
+
+                    if ($response->failed()) {
+                        $results['failed']++;
+                        $results['details'][] = [
+                            'nomor_tiket' => $payload['nomor_tiket'],
+                            'aplikasi' => $payload['aplikasi'],
+                            'status' => 'failed',
+                            'message' => $response->json('err') ?? $response->body(),
+                        ];
+                        continue;
+                    }
+
+                    $remoteTaskData = $response->json();
+                    if (is_array($remoteTaskData) && blank(data_get($remoteTaskData, 'id'))) {
+                        $remoteTaskData['id'] = $localTask->clickup_task_id;
+                    }
+                    $this->upsertCacheFromRemoteTask($remoteTaskData, $module->module_name, $payload);
+                    $results['updated']++;
+                    $results['details'][] = [
+                        'nomor_tiket' => $payload['nomor_tiket'],
+                        'aplikasi' => $payload['aplikasi'],
+                        'status' => 'updated',
+                    ];
+                    continue;
+                }
+
+                // If not found in cache, create new task in ClickUp list
+                $taskPayload = [
                     'name' => $this->buildTaskName($payload),
                     'status' => $payload['status'],
-                ]);
+                    'custom_fields' => [],
+                ];
+
+                if (filled($finalBrief)) {
+                    $taskPayload['custom_fields'][] = [
+                        'id' => 'c0e86b86-d278-43e5-aebe-b9ea20839e9f',
+                        'value' => $finalBrief,
+                    ];
+                }
+
+                if (filled($payload['requestor_name'])) {
+                    $taskPayload['custom_fields'][] = [
+                        'id' => 'dfce0320-ea00-47b1-9cb6-c3ea4cbb3874',
+                        'value' => $payload['requestor_name'],
+                    ];
+                }
+
+                if (filled($payload['resolution'])) {
+                    $taskPayload['custom_fields'][] = [
+                        'id' => '07f620f4-500b-4680-bd94-39fb6fcab5fe',
+                        'value' => $payload['resolution'],
+                    ];
+                }
+
+                if (filled($payload['ticket_category'])) {
+                    $categoryId = $this->mapTicketCategory($payload['ticket_category']);
+                    if ($categoryId) {
+                        $taskPayload['custom_fields'][] = [
+                            'id' => 'ac661cf6-6078-4c36-b5e3-da7c74ddf7a8',
+                            'value' => $categoryId,
+                        ];
+                    }
+                }
+
+                // Create task with retry on rate limit
+                $response = $this->requestWithRetry(fn () => $this->client($apiKey)->post("/list/{$module->clickup_list_id}/task", $taskPayload));
+
+                if ($response->failed() && str_contains(strtolower($response->body()), 'cannot find the custom field')) {
+                    // Fallback: Retry creation without custom_fields array
+                    $fallbackPayload = [
+                        'name' => $this->buildTaskName($payload),
+                        'status' => $payload['status'],
+                    ];
+                    $response = $this->requestWithRetry(fn () => $this->client($apiKey)->post("/list/{$module->clickup_list_id}/task", $fallbackPayload));
+                }
 
                 if ($response->failed()) {
                     $results['failed']++;
@@ -326,223 +493,33 @@ class ClickUpService
                     continue;
                 }
 
-                // Insert Custom Fields in ClickUp unconditionally to keep them perfectly synced with Excel
-                if (filled($finalBrief)) {
-                    $this->client($apiKey)->post("/task/{$localTask->clickup_task_id}/field/ca78bfeb-c360-45b0-9cb4-bf6e90db5b30", [
-                        'value' => $finalBrief,
-                    ]);
-                }
-
-                if (filled($payload['requestor_name'])) {
-                    $this->client($apiKey)->post("/task/{$localTask->clickup_task_id}/field/b703d753-adc4-406e-a01b-d0b581cf66cd", [
-                        'value' => $payload['requestor_name'],
-                    ]);
-                }
-
-                if (filled($payload['resolution'])) {
-                    $this->client($apiKey)->post("/task/{$localTask->clickup_task_id}/field/c155dabd-5a8e-4409-8bd9-bec1c2e79ec8", [
-                        'value' => $payload['resolution'],
-                    ]);
-                }
-
-                if (filled($payload['created_time'])) {
-                    $this->client($apiKey)->post("/task/{$localTask->clickup_task_id}/field/7b24c557-4735-4afc-a239-58347dd1a2e3", [
-                        'value' => $payload['created_time'],
-                    ]);
-                }
-
-                if (filled($payload['resolved_time'])) {
-                    $this->client($apiKey)->post("/task/{$localTask->clickup_task_id}/field/b3f49b69-3095-4687-8b34-ea2fddd95cea", [
-                        'value' => $payload['resolved_time'],
-                    ]);
-                }
-
-                if (filled($payload['nomor_tiket'])) {
-                    $this->client($apiKey)->post("/task/{$localTask->clickup_task_id}/field/b8c71da9-681b-4418-80e5-9dae2565e70a", [
-                        'value' => $payload['nomor_tiket'],
-                    ]);
-                }
-
-                $updateFields = [];
-
-                if (filled($payload['email_address'])) {
-                    $updateFields[] = [
-                        'id' => 'f1ddf2e6-ff4f-4b2d-9bac-28145776bdae',
-                        'value' => $payload['email_address'],
-                    ];
-                }
-
-                if (filled($payload['ticket_category'])) {
-                    $categoryId = $this->mapTicketCategory($payload['ticket_category']);
-                    if ($categoryId) {
-                        $updateFields[] = [
-                            'id' => 'ac661cf6-6078-4c36-b5e3-da7c74ddf7a8',
-                            'value' => $categoryId,
-                        ];
-                    }
-                }
-
-                if (filled($payload['created_time'])) {
-                    $updateFields[] = [
-                        'id' => '7b24c557-4735-4afc-a239-58347dd1a2e3',
-                        'value' => $payload['created_time'],
-                    ];
-                }
-
-                if (filled($payload['resolved_time'])) {
-                    $updateFields[] = [
-                        'id' => 'b3f49b69-3095-4687-8b34-ea2fddd95cea',
-                        'value' => $payload['resolved_time'],
-                    ];
-                }
-
-                if (filled($payload['resolution'])) {
-                    $updateFields[] = [
-                        'id' => 'c155dabd-5a8e-4409-8bd9-bec1c2e79ec8',
-                        'value' => $payload['resolution'],
-                    ];
-                }
-
-                if (filled($payload['aplikasi'])) {
-                    $appId = $this->mapAppCategory($payload['aplikasi']);
-                    if ($appId) {
-                        $updateFields[] = [
-                            'id' => 'aec0cf66-4c70-41e1-9b61-311d4d1a8eb5',
-                            'value' => $appId,
-                        ];
-                    }
-                }
-
-                $updatePayload = [
-                    'status' => $payload['status'],
-                ];
-
-                if (!empty($updateFields)) {
-                    $updatePayload['custom_fields'] = $updateFields;
-                }
-
-                $response = $this->client($apiKey)->put("/task/{$localTask->clickup_task_id}", $updatePayload);
-
                 $this->upsertCacheFromRemoteTask($response->json(), $module->module_name, $payload);
-                $results['updated']++;
+                $results['created']++;
                 $results['details'][] = [
                     'nomor_tiket' => $payload['nomor_tiket'],
                     'aplikasi' => $payload['aplikasi'],
-                    'status' => 'updated',
+                    'status' => 'created',
                 ];
-                continue;
-            }
-
-            if (blank($module->clickup_list_id)) {
-                $this->resolveModuleListIdFromCache($module, $apiKey);
-
-                if (blank($module->clickup_list_id)) {
-                    $results['skipped']++;
-                    $results['details'][] = [
-                        'nomor_tiket' => $payload['nomor_tiket'],
-                        'aplikasi' => $payload['aplikasi'],
-                        'status' => 'skipped',
-                        'message' => 'clickup_list_id belum bisa diambil otomatis dari cache module ini. Jalankan Sync Data dulu untuk backfill list ID.',
-                    ];
-                    continue;
-                }
-            }
-
-            $taskPayload = [
-                'name' => $this->buildTaskName($payload),
-                'status' => $payload['status'],
-            ];
-
-            if (filled($finalBrief)) {
-                $taskPayload['custom_fields'][] = [
-                    'id' => 'ca78bfeb-c360-45b0-9cb4-bf6e90db5b30',
-                    'value' => $finalBrief,
-                ];
-            }
-
-            if (filled($payload['resolution'])) {
-                $taskPayload['custom_fields'][] = [
-                    'id' => 'c155dabd-5a8e-4409-8bd9-bec1c2e79ec8',
-                    'value' => $payload['resolution'],
-                ];
-            }
-
-            if (filled($payload['requestor_name'])) {
-                $taskPayload['custom_fields'][] = [
-                    'id' => 'b703d753-adc4-406e-a01b-d0b581cf66cd',
-                    'value' => $payload['requestor_name'],
-                ];
-            }
-
-            // Map standard mapped fields requested by user
-            if (filled($payload['created_time'])) {
-                $taskPayload['custom_fields'][] = [
-                    'id' => '7b24c557-4735-4afc-a239-58347dd1a2e3', // Created Date Tickets
-                    'value' => $payload['created_time'],
-                ];
-            }
-
-            if (filled($payload['resolved_time'])) {
-                $taskPayload['custom_fields'][] = [
-                    'id' => 'b3f49b69-3095-4687-8b34-ea2fddd95cea', // Resolved Date Ticket
-                    'value' => $payload['resolved_time'],
-                ];
-            }
-
-            if (filled($payload['nomor_tiket'])) {
-                $taskPayload['custom_fields'][] = [
-                    'id' => 'b8c71da9-681b-4418-80e5-9dae2565e70a', // Ticket Number
-                    'value' => $payload['nomor_tiket'],
-                ];
-            }
-
-            if (filled($payload['aplikasi'])) {
-                $appId = $this->mapAppCategory($payload['aplikasi']);
-                if ($appId) {
-                    $taskPayload['custom_fields'][] = [
-                        'id' => 'aec0cf66-4c70-41e1-9b61-311d4d1a8eb5', // Apps
-                        'value' => $appId,
-                    ];
-                }
-            }
-
-            if (filled($payload['email_address'])) {
-                $taskPayload['custom_fields'][] = [
-                    'id' => 'f1ddf2e6-ff4f-4b2d-9bac-28145776bdae', // Email Address
-                    'value' => $payload['email_address'],
-                ];
-            }
-
-            if (filled($payload['ticket_category'])) {
-                $categoryId = $this->mapTicketCategory($payload['ticket_category']);
-                if ($categoryId) {
-                    $taskPayload['custom_fields'][] = [
-                        'id' => 'ac661cf6-6078-4c36-b5e3-da7c74ddf7a8', // Ticket Category
-                        'value' => $categoryId,
-                    ];
-                }
-            }
-
-            $response = $this->client($apiKey)->post("/list/{$module->clickup_list_id}/task", $taskPayload);
-
-            if ($response->failed()) {
+            } catch (\Throwable $e) {
                 $results['failed']++;
                 $results['details'][] = [
-                    'nomor_tiket' => $payload['nomor_tiket'],
-                    'aplikasi' => $payload['aplikasi'],
+                    'nomor_tiket' => data_get($row, 'nomor_tiket', 'N/A'),
+                    'aplikasi' => data_get($row, 'aplikasi', 'N/A'),
                     'status' => 'failed',
-                    'message' => $response->json('err') ?? $response->body(),
+                    'message' => $e->getMessage(),
                 ];
-                continue;
+            } finally {
+                $processed++;
+                if ($importToken) {
+                    Cache::put("import_progress_{$importToken}", [
+                        'import_token' => $importToken,
+                        'status' => $processed >= $totalRows ? 'completed' : 'running',
+                        'processed_rows' => $processed,
+                        'total_rows' => $totalRows,
+                        'progress_percent' => $totalRows > 0 ? (int) round(($processed / $totalRows) * 100) : 100,
+                    ], now()->addHours(1));
+                }
             }
-
-            $this->upsertCacheFromRemoteTask($response->json(), $module->module_name, $payload);
-            $results['created']++;
-            $results['details'][] = [
-                'nomor_tiket' => $payload['nomor_tiket'],
-                'aplikasi' => $payload['aplikasi'],
-                'status' => 'created',
-            ];
         }
 
         return $results;
@@ -564,16 +541,17 @@ class ClickUpService
         $rules = ClickUpImportRule::where('source_format', $sourceFormat)->get();
         $techMappings = \App\Models\TechnicianMapping::all();
         $modules = ClickUpModule::all()->keyBy('module_name');
-        
+
         $cachedTiketIds = ClickUpTaskCache::query()
             ->whereNotNull('tiket_id')
-            ->select('tiket_id', 'tipe_aplikasi')
-            ->get()
-            ->map(fn($t) => "{$t->tipe_aplikasi}::{$t->tiket_id}")
+            ->pluck('tiket_id')
+            ->map(fn($id) => $this->cleanTiketId($id))
+            ->filter()
             ->flip()
             ->toArray();
 
         $previewRows = [];
+        $seenInFile = [];
 
         foreach ($rows as $row) {
             $normalized = collect($row)
@@ -599,9 +577,20 @@ class ClickUpService
             $payload['generate'] = strtoupper(trim($sourceFormat));
 
             $issues = [];
-            // We now consolidate to 1 module, grab the first active module
             $primaryModule = $modules->where('is_active', true)->first();
-            $isDuplicate = filled($payload['nomor_tiket']) && filled($payload['aplikasi']) && isset($cachedTiketIds["{$payload['aplikasi']}::{$payload['nomor_tiket']}"]);
+            $cleanTiket = $this->cleanTiketId($payload['nomor_tiket']);
+
+            $isDuplicateInFile = false;
+            if (filled($cleanTiket)) {
+                if (isset($seenInFile[$cleanTiket])) {
+                    $isDuplicateInFile = true;
+                } else {
+                    $seenInFile[$cleanTiket] = true;
+                }
+            }
+
+            $isDuplicateCache = filled($cleanTiket) && isset($cachedTiketIds[$cleanTiket]);
+            $isDuplicate = $isDuplicateCache || $isDuplicateInFile;
 
             if (blank($payload['nomor_tiket'])) {
                 $issues[] = 'Nomor tiket kosong';
@@ -612,22 +601,26 @@ class ClickUpService
             }
 
             if (! $primaryModule) {
-                $issues[] = 'Belum ada Module aktif yang terkonfigurasi di sistem (harap buat 1 module)';
+                $issues[] = 'Belum ada Module aktif yang terkonfigurasi di sistem (harap buat minimal 1 module)';
             } elseif (blank($primaryModule->clickup_list_id)) {
                 $issues[] = 'List ID module belum tersimpan, akan di-resolve otomatis saat submit';
             }
 
-            if ($isDuplicate) {
+            if ($isDuplicateInFile) {
+                $issues[] = 'Tiket duplikat dalam file Excel (hanya 1 yang diproses)';
+            } elseif ($isDuplicateCache) {
                 $issues[] = 'Tiket sudah ada di cache (akan di-update)';
             }
 
             $status = ! $primaryModule || (filled($payload['aplikasi']) && !$this->mapAppCategory($payload['aplikasi']))
                 ? 'skip'
-                : ($isDuplicate
-                    ? 'duplicate'
-                    : ($primaryModule->clickup_list_id
-                        ? 'ready'
-                        : 'warn'));
+                : ($isDuplicateInFile
+                    ? 'skip'
+                    : ($isDuplicateCache
+                        ? 'duplicate'
+                        : ($primaryModule->clickup_list_id
+                            ? 'ready'
+                            : 'warn')));
 
             $payload['is_duplicate'] = $isDuplicate;
             $payload['review_status'] = $status;
@@ -643,9 +636,67 @@ class ClickUpService
         ];
     }
 
-        private function client(string $apiKey): PendingRequest
+    /**
+     * Clean and normalize a ticket ID (strip '#', trim, lower) for consistent deduplication.
+     */
+    private function cleanTiketId(?string $tiketId): string
+    {
+        if (blank($tiketId)) {
+            return '';
+        }
+        $clean = trim((string) $tiketId);
+        $clean = ltrim($clean, '#');
+        return strtolower(trim($clean));
+    }
+
+    /**
+     * Helper to execute ClickUp API request with retry on 429 Rate Limit Exceeded and cURL timeouts
+     */
+    private function requestWithRetry(callable $callback, int $maxRetries = 5, int $initialDelayMs = 1500): \Illuminate\Http\Client\Response
+    {
+        $attempts = 0;
+
+        while (true) {
+            $attempts++;
+            try {
+                /** @var \Illuminate\Http\Client\Response $response */
+                $response = $callback();
+
+                if ($response->status() === 429 && $attempts < $maxRetries) {
+                    $retryAfter = $response->header('Retry-After');
+                    $resetTime = $response->header('X-RateLimit-Reset');
+
+                    if ($retryAfter && is_numeric($retryAfter)) {
+                        $sleepSeconds = (int) $retryAfter;
+                    } elseif ($resetTime && is_numeric($resetTime)) {
+                        $sleepSeconds = max(1, (int) $resetTime - time());
+                    } else {
+                        $sleepSeconds = ($initialDelayMs * $attempts) / 1000;
+                    }
+
+                    $sleepSeconds = min(10, max(1, (int) round($sleepSeconds)));
+                    sleep($sleepSeconds);
+                    continue;
+                }
+
+                // Micro-throttle requests slightly to respect rate limits
+                usleep(150000);
+                return $response;
+
+            } catch (\Throwable $e) {
+                if ($attempts < $maxRetries) {
+                    sleep(2);
+                    continue;
+                }
+                throw $e;
+            }
+        }
+    }
+
+    private function client(string $apiKey): PendingRequest
     {
         return Http::baseUrl(self::BASE_URL)
+            ->timeout(60)
             ->acceptJson()
             ->withoutVerifying()
             ->withHeaders([
@@ -735,12 +786,41 @@ class ClickUpService
         return $progress;
     }
 
-    private function upsertCacheFromRemoteTask(array $task, string $moduleName, array $extraData = []): ClickUpTaskCache
+    private function upsertCacheFromRemoteTask(?array $task, string $moduleName, array $extraData = []): ?ClickUpTaskCache
     {
-        $name = data_get($task, 'name', '');
+        if (empty($task)) {
+            return null;
+        }
+
+        $name = data_get($task, 'name', data_get($extraData, 'name', ''));
         $clickupTaskId = data_get($task, 'id');
 
-        $localTask = ClickUpTaskCache::query()->where('clickup_task_id', $clickupTaskId)->first();
+        $tiketId = data_get($extraData, 'nomor_tiket') ?: $this->extractTiketId($name);
+        $cleanTiket = $this->cleanTiketId($tiketId);
+
+        $localTask = null;
+        if (filled($clickupTaskId)) {
+            $localTask = ClickUpTaskCache::query()->where('clickup_task_id', $clickupTaskId)->first();
+        }
+
+        if (! $localTask && filled($cleanTiket)) {
+            $localTask = ClickUpTaskCache::query()
+                ->where(function ($q) use ($tiketId, $cleanTiket) {
+                    $q->where('tiket_id', $tiketId)
+                      ->orWhere('tiket_id', $cleanTiket)
+                      ->orWhere('tiket_id', '#' . $cleanTiket);
+                })
+                ->first();
+
+            if ($localTask && blank($clickupTaskId)) {
+                $clickupTaskId = $localTask->clickup_task_id;
+            }
+        }
+
+        // We CANNOT insert into clickup_tasks_cache if clickup_task_id is blank/null due to NOT NULL constraint
+        if (blank($clickupTaskId)) {
+            return null;
+        }
 
         $clickupResolution = null;
         $clickupRequestor = null;
@@ -817,29 +897,23 @@ class ClickUpService
         if (filled(data_get($extraData, 'resolved_time'))) {
             $attributes['resolved_time'] = data_get($extraData, 'resolved_time');
         }
-        
+
         // SLA & Metrics mapping from extraData
         $metricsFields = [
             'technician', 'response_date', 'due_by_time', 'overdue_status', 
             'overdue_by', 'hold_time', 'item', 'priority', 'ticket_category'
         ];
-        
+
         foreach ($metricsFields as $mField) {
             if (filled(data_get($extraData, $mField))) {
-                // If it's ticket_category from payload, we map it to category column in DB
                 if ($mField === 'ticket_category') {
                     $attributes['category'] = data_get($extraData, $mField);
-                } else if ($mField === 'overdue_by') {
-                    // we map overdue_by to perhaps sla_violated_technician or similar, wait
-                    // earlier we added overdue_status, resolved_overdue. 
-                    // Let's just map exactly what was in the migration.
-                    // Migrations: time_elapsed, hold_time, actual_time, response_overdue, response_date, response_due_date, sla_response_time, sla_resolved_time
                 } else {
                     $attributes[$mField] = data_get($extraData, $mField);
                 }
             }
         }
-        
+
         // Map remaining SLA metrics based on the migration fields:
         $dbMetrics = [
             'technician', 'category', 'item', 'priority',
@@ -854,8 +928,6 @@ class ClickUpService
                 $attributes[$dbMetric] = data_get($extraData, $dbMetric);
             }
         }
-        // specifically, payload 'overdue_by' doesn't have an exact matching db column yet unless we used a different name. 
-        // Let's ignore overdue_by for DB insertion if we don't have a column, or just leave it.
 
         return ClickUpTaskCache::query()->updateOrCreate(
             ['clickup_task_id' => $clickupTaskId],

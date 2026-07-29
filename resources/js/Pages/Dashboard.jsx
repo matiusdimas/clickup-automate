@@ -313,6 +313,63 @@ export default function Dashboard() {
         loadOverview();
         loadRules();
         loadTechMappings();
+
+        // Resume active import progress if user refreshes page while import is running
+        const savedImportToken = localStorage.getItem('clickup_active_import_token');
+        if (savedImportToken) {
+            fetchImportProgress(savedImportToken).then((data) => {
+                if (data && data.status === 'running') {
+                    setImporting(true);
+                    setImportProgress(data);
+                    let polling = true;
+                    const timer = window.setInterval(async () => {
+                        if (!polling) return;
+                        const latest = await fetchImportProgress(savedImportToken);
+                        if (latest?.status === 'completed' || latest?.status === 'failed' || !latest) {
+                            polling = false;
+                            window.clearInterval(timer);
+                            setImporting(false);
+                            localStorage.removeItem('clickup_active_import_token');
+                            loadOverview();
+                        }
+                    }, 1000);
+                } else {
+                    localStorage.removeItem('clickup_active_import_token');
+                }
+            });
+        }
+
+        // Resume active sync progress if user refreshes page while sync is running
+        const savedSyncToken = localStorage.getItem('clickup_active_sync_token');
+        if (savedSyncToken) {
+            fetchSyncProgress(savedSyncToken).then((data) => {
+                if (data && data.status === 'running') {
+                    setSyncing(true);
+                    setSyncProgress(data);
+                    let polling = true;
+                    const timer = window.setInterval(async () => {
+                        if (!polling) return;
+                        try {
+                            const latest = await fetchSyncProgress(savedSyncToken);
+                            if (latest?.status === 'done' || latest?.status === 'failed' || latest?.status === 'missing' || !latest) {
+                                polling = false;
+                                window.clearInterval(timer);
+                                setSyncing(false);
+                                localStorage.removeItem('clickup_active_sync_token');
+                                loadOverview();
+                            }
+                        } catch {
+                            polling = false;
+                            window.clearInterval(timer);
+                            setSyncing(false);
+                            localStorage.removeItem('clickup_active_sync_token');
+                        }
+                    }, 1000);
+                } else {
+                    localStorage.removeItem('clickup_active_sync_token');
+                }
+            });
+        }
     }, []);
 
     const modules = overview?.modules ?? [];
@@ -355,10 +412,20 @@ export default function Dashboard() {
         return map[String(appName || '').toLowerCase().trim()] || null;
     };
 
-    const reviewImportRow = (row, moduleLookup, cachedTiketIds) => {
+    const cleanTiketId = (id) => String(id || '').trim().replace(/^#/, '').toLowerCase();
+
+    const reviewImportRow = (row, moduleLookup, cachedTiketIds, seenInFile) => {
         const issues = [];
-        const isDuplicate = row.nomor_tiket && row.aplikasi && cachedTiketIds.has(`${row.aplikasi}::${row.nomor_tiket}`);
         const primaryModule = Object.values(moduleLookup)[0];
+
+        const cleanKey = cleanTiketId(row.nomor_tiket);
+        const isDuplicateInFile = cleanKey ? seenInFile.has(cleanKey) : false;
+        if (cleanKey) {
+            seenInFile.add(cleanKey);
+        }
+
+        const isDuplicateCache = cleanKey ? cachedTiketIds.has(cleanKey) : false;
+        const isDuplicate = isDuplicateCache || isDuplicateInFile;
 
         if (!row.nomor_tiket) {
             issues.push('Nomor tiket kosong');
@@ -374,17 +441,21 @@ export default function Dashboard() {
             issues.push('List ID module belum tersimpan, akan di-resolve otomatis saat submit');
         }
 
-        if (isDuplicate) {
+        if (isDuplicateInFile) {
+            issues.push('Tiket duplikat dalam file Excel (hanya 1 yang diproses)');
+        } else if (isDuplicateCache) {
             issues.push('Tiket sudah ada di cache (akan di-update)');
         }
 
         const status = !primaryModule || (row.aplikasi && !mapAppCategory(row.aplikasi))
             ? 'skip'
-            : isDuplicate
-                ? 'duplicate'
-                : primaryModule.clickup_list_id
-                    ? 'ready'
-                    : 'warn';
+            : isDuplicateInFile
+                ? 'skip'
+                : isDuplicateCache
+                    ? 'duplicate'
+                    : primaryModule.clickup_list_id
+                        ? 'ready'
+                        : 'warn';
 
         return {
             ...row,
@@ -418,43 +489,76 @@ export default function Dashboard() {
         setImportResult(null);
 
         try {
-            const rulesToApply = rules.filter((r) => r.source_format === importSource);
-            const { rows, headers } = await readExcelFile(file, rulesToApply, techMappings);
-            const moduleLookup = modules.reduce((carry, module) => {
-                carry[String(module.module_name).trim().toUpperCase()] = {
-                    clickup_list_id: module.clickup_list_id,
-                };
+            let loadedSuccessfully = false;
 
-                return carry;
-            }, {});
+            // Try server-side preview generation first (checks ALL cached tickets in database)
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('source_format', importSource);
 
-            // Build a set of existing tiket_id+tipe_aplikasi from cached tasks for duplicate detection
-            const cachedTiketIds = new Set(
-                recentTasks
-                    .filter((t) => t.tiket_id)
-                    .map((t) => `${t.tipe_aplikasi}::${t.tiket_id}`),
-            );
+                const serverRes = await apiFetch(`${apiBase}/import/upload-preview`, {
+                    method: 'POST',
+                    body: formData,
+                });
 
-            const reviewedRows = rows.map((row) => reviewImportRow(row, moduleLookup, cachedTiketIds));
+                const serverPayload = await serverRes.json();
 
-            if (reviewedRows.length === 0) {
-                throw new Error('File Excel tidak berisi baris tiket yang valid.');
+                if (serverRes.ok && serverPayload.success && serverPayload.data) {
+                    setImportFileName(file.name);
+                    setImportPreview(serverPayload.data.rows ?? []);
+                    if (serverPayload.data.headers?.length > 0) {
+                        setDetectedHeaders(serverPayload.data.headers);
+                    }
+                    setActionMessage(`File siap direview. Total ${serverPayload.data.total ?? 0} baris ditemukan.`);
+                    loadedSuccessfully = true;
+                }
+            } catch {
+                // Fall back to client-side parsing below if server endpoint fails
             }
 
-            // Store detected column headers for use in rule creation dropdown
-            if (headers.length > 0) {
-                setDetectedHeaders(headers);
-            }
+            if (!loadedSuccessfully) {
+                const rulesToApply = rules.filter((r) => r.source_format === importSource);
+                const { rows, headers } = await readExcelFile(file, rulesToApply, techMappings);
+                const moduleLookup = modules.reduce((carry, module) => {
+                    carry[String(module.module_name).trim().toUpperCase()] = {
+                        clickup_list_id: module.clickup_list_id,
+                    };
 
-            setImportFileName(file.name);
-            setImportPreview(reviewedRows);
-            setActionMessage(`File siap direview. Total ${reviewedRows.length} baris ditemukan. Kolom terdeteksi: ${headers.join(', ')}.`);
+                    return carry;
+                }, {});
+
+                // Build a set of existing clean tiket_id from cached tasks for duplicate detection
+                const cachedTiketIds = new Set(
+                    recentTasks
+                        .filter((t) => t.tiket_id)
+                        .map((t) => cleanTiketId(t.tiket_id)),
+                );
+
+                const seenInFile = new Set();
+                const reviewedRows = rows.map((row) => reviewImportRow(row, moduleLookup, cachedTiketIds, seenInFile));
+
+                if (reviewedRows.length === 0) {
+                    throw new Error('File Excel tidak berisi baris tiket yang valid.');
+                }
+
+                // Store detected column headers for use in rule creation dropdown
+                if (headers.length > 0) {
+                    setDetectedHeaders(headers);
+                }
+
+                setImportFileName(file.name);
+                setImportPreview(reviewedRows);
+                setActionMessage(`File siap direview. Total ${reviewedRows.length} baris ditemukan. Kolom terdeteksi: ${headers.join(', ')}.`);
+            }
         } catch (error) {
             resetImportState();
             setActionMessage(error.message);
         } finally {
             setImporting(false);
-            event.target.value = '';
+            if (event.target) {
+                event.target.value = '';
+            }
         }
     };
 
@@ -535,22 +639,64 @@ export default function Dashboard() {
         }
     };
 
+    const [importProgress, setImportProgress] = useState(null);
+
+    const fetchImportProgress = async (importToken) => {
+        try {
+            const response = await apiFetch(`${apiBase}/import/${importToken}/progress`);
+            const payload = await response.json();
+
+            if (response.ok && payload.success) {
+                setImportProgress(payload.data);
+                return payload.data;
+            }
+        } catch {
+            // Silently ignore progress errors
+        }
+
+        return null;
+    };
+
     const submitImport = async () => {
         if (importPreview.length === 0) {
             setActionMessage('Upload file dulu untuk review sebelum submit.');
             return;
         }
 
+        const importToken = crypto.randomUUID();
+        localStorage.setItem('clickup_active_import_token', importToken);
         setImporting(true);
+        setImportProgress({
+            import_token: importToken,
+            status: 'running',
+            processed_rows: 0,
+            total_rows: importPreview.length,
+            progress_percent: 0,
+        });
 
         try {
             await syncClickUp(true);
         } catch (error) {
             setImporting(false);
+            setImportProgress(null);
+            localStorage.removeItem('clickup_active_import_token');
             return;
         }
 
-        setActionMessage('Memproses import...');
+        setActionMessage('Memproses import ke ClickUp & database lokal...');
+
+        let polling = true;
+        const timer = window.setInterval(async () => {
+            if (!polling) {
+                return;
+            }
+
+            const data = await fetchImportProgress(importToken);
+            if (data?.status === 'completed' || data?.status === 'failed') {
+                polling = false;
+                window.clearInterval(timer);
+            }
+        }, 1000);
 
         try {
             const payloadRows = importPreview.map(({ review_status, review_reason, ...row }) => row);
@@ -561,7 +707,8 @@ export default function Dashboard() {
                 },
                 body: JSON.stringify({
                     rows: payloadRows,
-                    source_format: importSource
+                    source_format: importSource,
+                    import_token: importToken,
                 }),
             });
 
@@ -580,7 +727,10 @@ export default function Dashboard() {
         } catch (error) {
             setActionMessage(error.message);
         } finally {
+            polling = false;
+            window.clearInterval(timer);
             setImporting(false);
+            localStorage.removeItem('clickup_active_import_token');
         }
     };
 
@@ -662,6 +812,7 @@ export default function Dashboard() {
 
     const syncClickUp = async (throwOnError = false) => {
         const syncToken = crypto.randomUUID();
+        localStorage.setItem('clickup_active_sync_token', syncToken);
         setSyncing(true);
         if (!throwOnError) {
             setActionMessage('');
@@ -730,6 +881,7 @@ export default function Dashboard() {
             polling = false;
             window.clearInterval(timer);
             setSyncing(false);
+            localStorage.removeItem('clickup_active_sync_token');
         }
     };
 
@@ -888,6 +1040,38 @@ export default function Dashboard() {
                                         ) : null}
                                     </div>
                                 ))}
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {importProgress ? (
+                        <section className="rounded-3xl border border-cyan-400/20 bg-slate-900/90 p-6 shadow-xl shadow-black/20 backdrop-blur-xl">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                    <p className="text-xs uppercase tracking-[0.28em] text-cyan-300">
+                                        Import progress
+                                    </p>
+                                    <h3 className="mt-1 text-lg font-semibold text-white">
+                                        {importProgress.status === 'completed'
+                                            ? 'Import data selesai'
+                                            : `Memproses ${importProgress.processed_rows ?? 0} / ${importProgress.total_rows ?? 0} tiket (${importProgress.progress_percent ?? 0}%)`}
+                                    </h3>
+                                </div>
+                                <span className={`rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] ${importProgress.status === 'completed' ? 'bg-emerald-400/10 text-emerald-200 border border-emerald-400/30' : 'bg-cyan-400/10 text-cyan-200 border border-cyan-400/30 animate-pulse'}`}>
+                                    {importProgress.status === 'completed' ? 'Selesai' : 'Importing...'}
+                                </span>
+                            </div>
+
+                            <div className="mt-4 h-3.5 overflow-hidden rounded-full bg-slate-950/80 p-0.5 border border-white/10">
+                                <div
+                                    className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-300"
+                                    style={{ width: `${importProgress.progress_percent ?? 0}%` }}
+                                />
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-between text-xs uppercase tracking-[0.24em] text-slate-400">
+                                <span>{importProgress.progress_percent ?? 0}% Selesai</span>
+                                <span>{importProgress.processed_rows ?? 0} diproses / {importProgress.total_rows ?? 0} total baris</span>
                             </div>
                         </section>
                     ) : null}
