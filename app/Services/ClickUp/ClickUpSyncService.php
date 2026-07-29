@@ -382,9 +382,15 @@ class ClickUpSyncService
 
     public function upsertCacheFromRemoteTask(?array $task, string $moduleName, array $extraData = []): ?ClickUpTaskCache
     {
-        if (empty($task)) {
+        if (empty($task) && empty($extraData)) {
             return null;
         }
+
+        $clickupTaskId = data_get($task, 'id') ?: data_get($extraData, 'clickup_task_id');
+
+        $localTask = filled($clickupTaskId)
+            ? ClickUpTaskCache::query()->where('clickup_task_id', $clickupTaskId)->first()
+            : null;
 
         $name = data_get($task, 'name')
             ?: data_get($extraData, 'name')
