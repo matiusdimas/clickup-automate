@@ -254,12 +254,55 @@ Memicu sinkronisasi data terbaru dari ClickUp Views ke database lokal.
 ```
 *(Jika `sync_token` tidak dikirim, backend akan meng-generate token secara otomatis).*
 
-#### Contoh Request cURL:
-```bash
-curl -X POST "http://127.0.0.1:8000/api/clickup/sync" \
-  -H "Authorization: Bearer YOUR_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"sync_token": "sync-unique-uuid"}'
+#### Respon JSON (200 OK):
+```json
+{
+  "success": true,
+  "status": "started",
+  "sync_token": "sync-unique-uuid",
+  "message": "Proses sinkronisasi telah dimulai di latar belakang.",
+  "tasks": [
+    {
+      "id": 1,
+      "clickup_task_id": "86eyex29k",
+      "custom_id": null,
+      "tiket_id": "LMD/2026/7/6925",
+      "name": "LMD/2026/7/6925 BSB - Perubahan data akun karyawan cabang",
+      "tipe_aplikasi": "EBESHA",
+      "aplikasi": "BANK SUMSEL BABEL",
+      "status": "Closed",
+      "created_time": "Jul 29, 2026 02:04 PM",
+      "resolved_time": "Jul 29, 2026 12:00 AM",
+      "created_at": "2026-07-29T12:57:15.000000Z",
+      "updated_at": "2026-07-29T13:45:42.000000Z",
+      "description": "Technician: LMD - Louis...",
+      "requestor_name": "BANK SUMSEL BABEL",
+      "resolution": "Sudah disesuaikan nama data karyawan cabang",
+      "technician": "LMD - Louis",
+      "category": "Check Request",
+      "subcategory": "BANK SUMSEL BABEL",
+      "item": "eBesha -> Ebesha CRM",
+      "priority": "MEDIUM",
+      "request_type": "Check Request",
+      "request_status": "Closed",
+      "due_by_time": "Jul 29, 2026 05:00 PM",
+      "completed_time": "Jul 29, 2026 12:00 AM",
+      "overdue_status": "false",
+      "resolved_overdue": "false",
+      "resolved_due_date": "Jul 29, 2026 05:00 PM",
+      "group": "L1 Group",
+      "generate": "EBESHA",
+      "time_elapsed": "00:00:00",
+      "hold_time": "00:00:00",
+      "actual_time": "00:00:00",
+      "response_overdue": "false",
+      "response_date": "Jul 29, 2026 02:05 PM",
+      "response_due_date": "Jul 29, 2026 02:14 PM",
+      "sla_response_time": "10",
+      "sla_resolved_time": "54:00:00"
+    }
+  ]
+}
 ```
 
 ---

@@ -69,21 +69,10 @@ class ClickUpTaskController extends Controller
             ->when($validated['search'] ?? null, fn ($builder, $search) => $builder->where('name', 'like', '%' . trim($search) . '%'))
             ->orderByDesc('updated_at');
 
-        $tasks = $query->get()->map(fn (ClickUpTaskCache $task) => [
-            'id' => $task->id,
-            'clickup_task_id' => $task->clickup_task_id,
-            'custom_id' => $task->custom_id,
-            'tiket_id' => $task->tiket_id,
-            'name' => $task->name,
-            'tipe_aplikasi' => $task->tipe_aplikasi,
-            'aplikasi' => $task->aplikasi,
-            'status' => $task->status,
-            'updated_at' => $task->updated_at?->toIso8601String(),
-        ]);
-
         return response()->json([
             'success' => true,
-            'data' => $tasks,
+            'total' => $query->count(),
+            'data' => $query->get(),
         ]);
     }
 }

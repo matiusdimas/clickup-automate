@@ -38,6 +38,7 @@ class ClickUpSyncController extends Controller
             return response()->json([
                 'success' => true,
                 ...$startData,
+                'tasks' => \App\Models\ClickUpTaskCache::query()->orderByDesc('updated_at')->get(),
             ]);
         } catch (\Throwable $exception) {
             return response()->json([
