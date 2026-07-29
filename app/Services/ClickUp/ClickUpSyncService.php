@@ -351,6 +351,7 @@ class ClickUpSyncService
         $clickupRequestor = null;
         $clickupBrief = null;
         $clickupApps = null;
+        $clickupCategory = null;
 
         $customFields = data_get($task, 'custom_fields', []);
         if (is_array($customFields)) {
@@ -370,6 +371,21 @@ class ClickUpSyncService
                         if (!$clickupApps) {
                             $selected = collect($options)->firstWhere('orderindex', $valIndex);
                             $clickupApps = data_get($selected, 'name');
+                        }
+                    }
+                } elseif ($fieldName === 'ticket category' || $fieldName === 'category' || $fieldName === 'kategori') {
+                    $valIndex = data_get($field, 'value');
+                    if ($valIndex !== null) {
+                        $options = data_get($field, 'type_config.options', []);
+                        if (is_string($valIndex) && !is_numeric($valIndex)) {
+                            $selected = collect($options)->firstWhere('id', $valIndex);
+                            $clickupCategory = data_get($selected, 'name', $valIndex);
+                        } else {
+                            $clickupCategory = data_get($options, $valIndex . '.name');
+                            if (!$clickupCategory) {
+                                $selected = collect($options)->firstWhere('orderindex', $valIndex);
+                                $clickupCategory = data_get($selected, 'name');
+                            }
                         }
                     }
                 }
@@ -403,6 +419,9 @@ class ClickUpSyncService
         }
         if (filled($clickupRequestor) && (!$localTask || empty($localTask->requestor_name))) {
             $attributes['requestor_name'] = is_string($clickupRequestor) ? $clickupRequestor : json_encode($clickupRequestor);
+        }
+        if (filled($clickupCategory)) {
+            $attributes['category'] = $clickupCategory;
         }
 
         if (filled(data_get($extraData, 'description'))) {

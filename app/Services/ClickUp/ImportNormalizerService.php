@@ -254,6 +254,7 @@ class ImportNormalizerService
             'item' => trim((string) $item),
             'priority' => trim((string) $priority),
             'ticket_category' => trim((string) $category),
+            'category' => trim((string) $category),
             
             // Extra fields for DB
             'request_type' => trim((string) $requestType),
