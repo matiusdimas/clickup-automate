@@ -39,19 +39,26 @@ class ClickUpSyncController extends Controller
                 'success' => true,
                 ...$startData,
             ]);
-        } catch (RuntimeException $exception) {
+        } catch (\Throwable $exception) {
             return response()->json([
                 'success' => false,
                 'message' => $exception->getMessage(),
-            ], 422);
+            ], 500);
         }
     }
 
     public function progress(string $syncToken): JsonResponse
     {
-        return response()->json([
-            'success' => true,
-            'data' => $this->syncService->syncProgress($syncToken),
-        ]);
+        try {
+            return response()->json([
+                'success' => true,
+                'data' => $this->syncService->syncProgress($syncToken),
+            ]);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 500);
+        }
     }
 }

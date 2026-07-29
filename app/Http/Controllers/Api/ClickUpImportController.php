@@ -52,20 +52,27 @@ class ClickUpImportController extends Controller
                 'message' => $startData['message'] ?? 'Import diproses.',
                 'data' => $startData,
             ]);
-        } catch (RuntimeException $exception) {
+        } catch (\Throwable $exception) {
             return response()->json([
                 'success' => false,
                 'message' => $exception->getMessage(),
-            ], 422);
+            ], 500);
         }
     }
 
     public function progress(string $importToken): JsonResponse
     {
-        return response()->json([
-            'success' => true,
-            'data' => $this->importService->importProgress($importToken),
-        ]);
+        try {
+            return response()->json([
+                'success' => true,
+                'data' => $this->importService->importProgress($importToken),
+            ]);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 500);
+        }
     }
 
     public function uploadPreview(UploadPreviewRequest $request): JsonResponse
