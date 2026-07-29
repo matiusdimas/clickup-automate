@@ -203,6 +203,9 @@ class ClickUpImportService
                         'ca78bfeb-c360-45b0-9cb4-bf6e90db5b30' => $finalBrief,
                         'b703d753-adc4-406e-a01b-d0b581cf66cd' => $payload['requestor_name'],
                         'c155dabd-5a8e-4409-8bd9-bec1c2e79ec8' => $payload['resolution'],
+                        '7b24c557-4735-4afc-a239-58347dd1a2e3' => $payload['created_time'],
+                        'b3f49b69-3095-4687-8b34-ea2fddd95cea' => $payload['resolved_time'],
+                        'b8c71da9-681b-4418-80e5-9dae2565e70a' => $payload['nomor_tiket'],
                     ];
 
                     if (filled($payload['ticket_category'])) {
@@ -262,6 +265,27 @@ class ClickUpImportService
                     $taskPayload['custom_fields'][] = [
                         'id' => 'c155dabd-5a8e-4409-8bd9-bec1c2e79ec8',
                         'value' => $payload['resolution'],
+                    ];
+                }
+
+                if (filled($payload['created_time'])) {
+                    $taskPayload['custom_fields'][] = [
+                        'id' => '7b24c557-4735-4afc-a239-58347dd1a2e3',
+                        'value' => $payload['created_time'],
+                    ];
+                }
+
+                if (filled($payload['resolved_time'])) {
+                    $taskPayload['custom_fields'][] = [
+                        'id' => 'b3f49b69-3095-4687-8b34-ea2fddd95cea',
+                        'value' => $payload['resolved_time'],
+                    ];
+                }
+
+                if (filled($payload['nomor_tiket'])) {
+                    $taskPayload['custom_fields'][] = [
+                        'id' => 'b8c71da9-681b-4418-80e5-9dae2565e70a',
+                        'value' => $payload['nomor_tiket'],
                     ];
                 }
 
@@ -327,6 +351,7 @@ class ClickUpImportService
                         'processed_rows' => $processed,
                         'total_rows' => $totalRows,
                         'progress_percent' => $totalRows > 0 ? (int) round(($processed / $totalRows) * 100) : 100,
+                        'results' => $results,
                     ], now()->addHours(1));
                 }
             }

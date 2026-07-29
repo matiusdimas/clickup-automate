@@ -316,6 +316,9 @@ export default function Dashboard() {
                 activeImportTimer.current = null;
                 setImporting(false);
                 localStorage.removeItem('clickup_active_import_token');
+                if (data?.results) {
+                    setImportResult(data.results);
+                }
                 if (data?.status === 'completed') {
                     setActionMessage('Import selesai diproses.');
                 }
@@ -659,6 +662,9 @@ export default function Dashboard() {
 
             if (response.ok && payload.success && payload.data && payload.data.status !== 'not_found') {
                 setImportProgress(payload.data);
+                if (payload.data.results) {
+                    setImportResult(payload.data.results);
+                }
                 return payload.data;
             }
         } catch {
