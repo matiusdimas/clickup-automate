@@ -512,6 +512,13 @@ class ClickUpSyncService
             }
         }
 
+        $dateKeys = ['created_time', 'resolved_time', 'response_date', 'due_by_time', 'completed_time', 'resolved_due_date', 'response_due_date'];
+        foreach ($dateKeys as $dateKey) {
+            if (isset($attributes[$dateKey]) && filled($attributes[$dateKey])) {
+                $attributes[$dateKey] = DateFormattingService::format($attributes[$dateKey]);
+            }
+        }
+
         return ClickUpTaskCache::query()->updateOrCreate(
             ['clickup_task_id' => $clickupTaskId],
             $attributes

@@ -105,8 +105,8 @@ class ImportNormalizerService
             data_get($normalized, 'waktu selesai'),
         ])->first(fn ($value) => filled($value), '');
 
-        $createdTime = $this->formatDateString($createdTimeRaw);
-        $resolvedTime = $this->formatDateString($resolvedTimeRaw);
+        $createdTime = DateFormattingService::format($createdTimeRaw);
+        $resolvedTime = DateFormattingService::format($resolvedTimeRaw);
 
         $emailAddress = collect([
             data_get($normalized, 'email address'),
@@ -134,17 +134,20 @@ class ImportNormalizerService
             }
         }
 
-        $responseDate = collect([
+        $responseDateRaw = collect([
             data_get($normalized, 'response date'),
             data_get($normalized, 'responded date')
         ])->first(fn ($value) => filled($value), '');
 
-        $dueByTime = collect([
+        $dueByTimeRaw = collect([
             data_get($normalized, 'due by time'),
             data_get($normalized, 'dueby time'),
             data_get($normalized, 'resolved due date'),
             data_get($normalized, 'tanggal jatuh tempo')
         ])->first(fn ($value) => filled($value), '');
+
+        $responseDate = DateFormattingService::format($responseDateRaw);
+        $dueByTime = DateFormattingService::format($dueByTimeRaw);
 
         $overdueStatus = collect([
             data_get($normalized, 'overdue status'),
@@ -190,7 +193,8 @@ class ImportNormalizerService
             data_get($normalized, 'account')
         ])->first(fn ($value) => filled($value), '');
         
-        $completedTime = data_get($normalized, 'completed time', '');
+        $completedTimeRaw = data_get($normalized, 'completed time', '');
+        $completedTime = DateFormattingService::format($completedTimeRaw);
         
         // Match with the ones we just combined above
         $resolvedOverdue = $overdueStatus;
@@ -212,10 +216,11 @@ class ImportNormalizerService
             data_get($normalized, 'response overdue')
         ])->first(fn ($value) => filled($value), '');
         
-        $responseDueDate = collect([
+        $responseDueDateRaw = collect([
             data_get($normalized, 'response dueby time'),
             data_get($normalized, 'response due date')
         ])->first(fn ($value) => filled($value), '');
+        $responseDueDate = DateFormattingService::format($responseDueDateRaw);
         
         $slaResponseTime = data_get($normalized, 'sla response time', '');
         $slaResolvedTime = data_get($normalized, 'sla resolution time', '');
@@ -352,14 +357,6 @@ class ImportNormalizerService
 
     private function formatDateString(?string $dateString): string
     {
-        if (blank($dateString) || $dateString === '-') {
-            return '';
-        }
-
-        try {
-            return \Carbon\Carbon::parse(trim($dateString))->format('M d, Y h:i A');
-        } catch (\Throwable $e) {
-            return trim($dateString);
-        }
+        return DateFormattingService::format($dateString);
     }
 }
