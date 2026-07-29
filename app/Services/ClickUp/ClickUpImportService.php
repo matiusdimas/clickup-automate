@@ -209,6 +209,7 @@ class ClickUpImportService
                     // 2. Local DB Field-by-Field Diff Evaluator
                     $newName   = $this->buildTaskName($payload);
                     $newStatus = $payload['status'];
+                    $payload['name'] = $newName;
 
                     $nameDiff   = $this->isFieldDifferent($newName, $localTask->name);
                     $statusDiff = strtolower(trim($newStatus)) !== strtolower(trim((string) $localTask->status));
@@ -276,7 +277,11 @@ class ClickUpImportService
                     }
 
                     // 4. Update Main Task properties ONLY if Name or Status changed
-                    $remoteTaskData = ['id' => $localTask->clickup_task_id];
+                    $remoteTaskData = [
+                        'id'     => $localTask->clickup_task_id,
+                        'name'   => $newName,
+                        'status' => $newStatus,
+                    ];
 
                     if ($hasMainTaskDiff) {
                         $updatePayload = [];

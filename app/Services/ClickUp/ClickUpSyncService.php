@@ -359,16 +359,24 @@ class ClickUpSyncService
             return null;
         }
 
-        $name = data_get($task, 'name', data_get($extraData, 'name', ''));
-        $clickupTaskId = data_get($task, 'id');
+        $name = data_get($task, 'name')
+            ?: data_get($extraData, 'name')
+            ?: ($localTask ? $localTask->name : '');
 
-        $tiketId = data_get($extraData, 'nomor_tiket') ?: $this->extractTiketId($name);
-        $cleanTiket = $this->normalizer->cleanTiketId($tiketId);
-
-        $localTask = null;
-        if (filled($clickupTaskId)) {
-            $localTask = ClickUpTaskCache::query()->where('clickup_task_id', $clickupTaskId)->first();
+        if (blank($name) && filled(data_get($extraData, 'nomor_tiket'))) {
+            $nomor = data_get($extraData, 'nomor_tiket');
+            $prefix = ctype_digit((string) $nomor) ? '#' : '';
+            $subject = data_get($extraData, 'subject', '');
+            $name = $prefix . $nomor . (filled($subject) ? ' ' . $subject : '');
         }
+
+        $rawTiketId = data_get($extraData, 'nomor_tiket');
+        $extractedTiketId = $this->extractTiketId($name);
+        $tiketId = filled($rawTiketId)
+            ? $rawTiketId
+            : (filled($extractedTiketId) ? $extractedTiketId : ($localTask ? $localTask->tiket_id : null));
+
+        $cleanTiket = $this->normalizer->cleanTiketId($tiketId);
 
         if (! $localTask && filled($cleanTiket)) {
             $localTask = ClickUpTaskCache::query()
@@ -447,15 +455,24 @@ class ClickUpSyncService
             ?: data_get($extraData, 'origin')
             ?: data_get($extraData, 'aplikasi_name')
             ?: data_get($extraData, 'aplikasi')
-            ?: null;
+            ?: ($localTask ? $localTask->aplikasi : null);
+
+        $tipeAplikasi = $clickupApps
+            ?: data_get($extraData, 'aplikasi')
+            ?: ($localTask ? $localTask->tipe_aplikasi : $moduleName);
+
+        $statusVal = data_get($task, 'status.status')
+            ?: (is_string(data_get($task, 'status')) ? data_get($task, 'status') : null)
+            ?: data_get($extraData, 'status')
+            ?: ($localTask ? $localTask->status : 'Open');
 
         $attributes = [
-            'custom_id' => data_get($task, 'custom_id'),
-            'tiket_id' => $this->extractTiketId($name),
-            'name' => $name,
-            'tipe_aplikasi' => strtoupper($clickupApps ?: $moduleName),
-            'aplikasi' => $aplikasiDetail ? trim((string) $aplikasiDetail) : strtoupper($clickupApps ?: $moduleName),
-            'status' => data_get($task, 'status.status', data_get($task, 'status', 'Open')),
+            'custom_id' => data_get($task, 'custom_id') ?: ($localTask ? $localTask->custom_id : null),
+            'tiket_id' => $tiketId,
+            'name' => filled($name) ? $name : ($localTask ? $localTask->name : ''),
+            'tipe_aplikasi' => strtoupper((string) $tipeAplikasi),
+            'aplikasi' => $aplikasiDetail ? trim((string) $aplikasiDetail) : strtoupper((string) $tipeAplikasi),
+            'status' => $statusVal,
         ];
 
         $clickupDesc = $clickupBrief;
