@@ -59,9 +59,10 @@ class ClickUpSyncService
         
         Cache::put(self::SYNC_LOCK_KEY, $syncToken, now()->addHours(6));
 
-        // Ensure all active modules have list_id resolved from cached tasks
+        // Ensure all active modules have list_id resolved via view API or cache
         $modules = ClickUpModule::query()->where('is_active', true)->get();
         foreach ($modules as $module) {
+            $this->resolveModuleListIdFromView($module);
             $this->resolveModuleListIdFromCache($module);
         }
 
@@ -83,6 +84,7 @@ class ClickUpSyncService
         try {
             $modules = ClickUpModule::query()->where('is_active', true)->get();
             foreach ($modules as $module) {
+                $this->resolveModuleListIdFromView($module);
                 $this->resolveModuleListIdFromCache($module);
             }
             $modules = ClickUpModule::query()->where('is_active', true)->get();
@@ -92,10 +94,25 @@ class ClickUpSyncService
             if (!$progress) {
                 $progress = $this->initializeSyncProgress($syncToken, $modules);
             }
-            
+
             $moduleStates = collect($progress['modules'])->keyBy('module_name')->all();
-        $cachedTasks = 0;
-        $fetchedTasks = 0;
+
+            // Sync moduleStates with fresh module list_ids from database
+            foreach ($moduleStates as $mName => &$mState) {
+                $mModel = $modules->firstWhere('module_name', $mName);
+                if ($mModel && filled($mModel->clickup_list_id)) {
+                    $mState['clickup_list_id'] = $mModel->clickup_list_id;
+                    if ($mState['status'] === 'skipped' || empty($mState['clickup_list_id'])) {
+                        $mState['status'] = 'queued';
+                        $mState['done'] = false;
+                        $mState['error'] = null;
+                    }
+                }
+            }
+            unset($mState);
+
+            $cachedTasks = 0;
+            $fetchedTasks = 0;
 
             while (true) {
                 if ($this->isSyncCancelled($syncToken)) {
@@ -584,6 +601,29 @@ class ClickUpSyncService
 
         $module->forceFill([
             'clickup_list_id' => $listId,
+        ])->save();
+    }
+
+    public function resolveModuleListIdFromView(ClickUpModule $module): void
+    {
+        if (filled($module->clickup_list_id) || blank($module->clickup_view_id)) {
+            return;
+        }
+
+        $response = $this->apiClient->client()->get("/view/{$module->clickup_view_id}");
+
+        if ($response->failed()) {
+            return;
+        }
+
+        $listId = data_get($response->json(), 'view.parent.id');
+
+        if (blank($listId)) {
+            return;
+        }
+
+        $module->forceFill([
+            'clickup_list_id' => (string) $listId,
         ])->save();
     }
 

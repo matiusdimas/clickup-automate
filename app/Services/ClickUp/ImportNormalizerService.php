@@ -128,12 +128,13 @@ class ImportNormalizerService
             data_get($normalized, 'technician'),
             data_get($normalized, 'nama teknisi'),
             data_get($normalized, 'created by'),
-            data_get($normalized, 'created_by'),
             data_get($normalized, 'creator'),
             data_get($normalized, 'pembuat'),
             data_get($normalized, 'modified by'),
-            data_get($normalized, 'modified_by'),
             data_get($normalized, 'owner'),
+            data_get($normalized, 'assigned to'),
+            data_get($normalized, 'pic'),
+            data_get($normalized, 'handler'),
         ])->first(fn ($value) => filled($value), '');
 
         if (filled($techMappings) && filled($technician)) {
@@ -152,14 +153,17 @@ class ImportNormalizerService
 
         $responseDateRaw = collect([
             data_get($normalized, 'response date'),
-            data_get($normalized, 'responded date')
+            data_get($normalized, 'responded date'),
+            data_get($normalized, 'first response date'),
         ])->first(fn ($value) => filled($value), '');
 
         $dueByTimeRaw = collect([
             data_get($normalized, 'due by time'),
             data_get($normalized, 'dueby time'),
+            data_get($normalized, 'due date'),
             data_get($normalized, 'resolved due date'),
-            data_get($normalized, 'tanggal jatuh tempo')
+            data_get($normalized, 'tanggal jatuh tempo'),
+            data_get($normalized, 'deadline'),
         ])->first(fn ($value) => filled($value), '');
 
         $responseDate = DateFormattingService::format($responseDateRaw);
@@ -168,74 +172,111 @@ class ImportNormalizerService
         $overdueStatus = collect([
             data_get($normalized, 'overdue status'),
             data_get($normalized, 'resolved overdue'),
-            data_get($normalized, 'status overdue')
+            data_get($normalized, 'status overdue'),
+            data_get($normalized, 'overdue'),
+            data_get($normalized, 'is overdue'),
         ])->first(fn ($value) => filled($value), '');
 
         $overdueBy = collect([
             data_get($normalized, 'overdue by'),
             data_get($normalized, 'sla violated technician'),
-            data_get($normalized, 'fr sla violated technician')
+            data_get($normalized, 'fr sla violated technician'),
         ])->first(fn ($value) => filled($value), '');
 
         $holdTime = collect([
             data_get($normalized, 'hold time'),
-            data_get($normalized, 'onhold time')
+            data_get($normalized, 'onhold time'),
+            data_get($normalized, 'stopclock'),
         ])->first(fn ($value) => filled($value), '');
 
         $item = collect([
             data_get($normalized, 'item'),
-            data_get($normalized, 'service category')
+            data_get($normalized, 'service category'),
+            data_get($normalized, 'module'),
+            data_get($normalized, 'aplikasi detail'),
+            data_get($normalized, 'detail aplikasi'),
         ])->first(fn ($value) => filled($value), '');
 
         $rawPriority = collect([
             data_get($normalized, 'priority'),
-            data_get($normalized, 'prioritas')
+            data_get($normalized, 'prioritas'),
+            data_get($normalized, 'severity'),
+            data_get($normalized, 'urgency'),
         ])->first(fn ($value) => filled($value), '');
         
         $priority = $this->normalizePriority($rawPriority);
 
         $category = collect([
+            data_get($normalized, 'ticket category'),
             data_get($normalized, 'request type'),
-            data_get($normalized, 'category')
+            data_get($normalized, 'category'),
+            data_get($normalized, 'kategori'),
         ])->first(fn ($value) => filled($value), '');
 
-        // Extracting all requested fields for DB metrics:
-        $requestType = data_get($normalized, 'request type', '');
-        $requestStatus = data_get($normalized, 'request status', '');
+        $requestType = collect([
+            data_get($normalized, 'request type'),
+            data_get($normalized, 'ticket category'),
+            data_get($normalized, 'category'),
+            data_get($normalized, 'type'),
+        ])->first(fn ($value) => filled($value), '');
+
+        $requestStatus = collect([
+            data_get($normalized, 'request status'),
+            data_get($normalized, 'status'),
+            data_get($normalized, 'ticket status'),
+        ])->first(fn ($value) => filled($value), '');
         
         $subcategory = collect([
             data_get($normalized, 'subcategory'),
             data_get($normalized, 'subkategori'),
-            data_get($normalized, 'account')
+            data_get($normalized, 'account'),
+            data_get($normalized, 'tenant'),
+            data_get($normalized, 'client'),
+            data_get($normalized, 'company'),
         ])->first(fn ($value) => filled($value), '');
         
-        $completedTimeRaw = data_get($normalized, 'completed time', '');
+        $completedTimeRaw = collect([
+            data_get($normalized, 'completed time'),
+            data_get($normalized, 'completed date'),
+            data_get($normalized, 'resolved date'),
+            data_get($normalized, 'resolved time'),
+        ])->first(fn ($value) => filled($value), '');
+
         $completedTime = DateFormattingService::format($completedTimeRaw);
         
-        // Match with the ones we just combined above
         $resolvedOverdue = $overdueStatus;
         $resolvedDueDate = $dueByTime;
         
-        $group = collect([data_get($normalized, 'group'), data_get($normalized, 'grup')])->first(fn ($v) => filled($v), '');
+        $group = collect([
+            data_get($normalized, 'group'),
+            data_get($normalized, 'grup'),
+            data_get($normalized, 'team'),
+            data_get($normalized, 'department'),
+        ])->first(fn ($v) => filled($v), '');
         
         $timeElapsed = collect([
             data_get($normalized, 'time elapsed'),
-            data_get($normalized, 'elapsed time')
+            data_get($normalized, 'elapsed time'),
+            data_get($normalized, 'duration'),
         ])->first(fn ($value) => filled($value), '');
         
         $actualTime = collect([
             data_get($normalized, 'actual time'),
-            data_get($normalized, 'time elapsed') // Fallback to SDP's 'Time Elapsed'
+            data_get($normalized, 'time elapsed'),
         ])->first(fn ($value) => filled($value), '');
+
         $responseOverdue = collect([
             data_get($normalized, 'first response overdue status'),
-            data_get($normalized, 'response overdue')
+            data_get($normalized, 'response overdue'),
+            data_get($normalized, 'response overdue status'),
         ])->first(fn ($value) => filled($value), '');
         
         $responseDueDateRaw = collect([
             data_get($normalized, 'response dueby time'),
-            data_get($normalized, 'response due date')
+            data_get($normalized, 'response due date'),
+            data_get($normalized, 'first response due date'),
         ])->first(fn ($value) => filled($value), '');
+
         $responseDueDate = DateFormattingService::format($responseDueDateRaw);
         
         $slaResponseTime = data_get($normalized, 'sla response time', '');
@@ -250,6 +291,7 @@ class ImportNormalizerService
             data_get($normalized, 'aplikasi name'),
             data_get($normalized, 'nama aplikasi'),
             data_get($normalized, 'aplikasi'),
+            data_get($normalized, 'subcategory'),
         ])->first(fn ($value) => filled($value), '');
 
         return [
