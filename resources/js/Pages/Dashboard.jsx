@@ -320,7 +320,12 @@ export default function Dashboard() {
                     setImportResult(data.results);
                 }
                 if (data?.status === 'completed') {
-                    setActionMessage('Import selesai diproses.');
+                    const res = data?.results;
+                    if (res) {
+                        setActionMessage(`Import selesai. Created: ${res.created ?? 0}, Updated: ${res.updated ?? 0}, Skipped: ${res.skipped ?? 0}, Failed: ${res.failed ?? 0}`);
+                    } else {
+                        setActionMessage('Import selesai diproses.');
+                    }
                 }
             }
         }, 1000);

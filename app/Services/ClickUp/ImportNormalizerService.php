@@ -313,10 +313,16 @@ class ImportNormalizerService
             'information' => 'ffc36a53-d70c-4f40-ac83-9fe9841de6ea',
         ];
 
-        $lower = strtolower(trim($category));
+        $lower = Str::of($category)->lower()->trim()->squish()->toString();
         
         if (isset($map[$lower])) {
             return $map[$lower];
+        }
+
+        foreach ($map as $key => $id) {
+            if (str_contains($lower, $key)) {
+                return $id;
+            }
         }
 
         return null;
