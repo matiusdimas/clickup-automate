@@ -349,7 +349,8 @@ class ClickUpImportService
                     ], now()->addHours(1));
                 }
             }
-        } catch (\Throwable $e) {
+        }
+    } catch (\Throwable $e) {
             Log::error("ClickUp Import Error: " . $e->getMessage());
         } finally {
             if (Cache::get(self::IMPORT_LOCK_KEY) === $importToken) {
