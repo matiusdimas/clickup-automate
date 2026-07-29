@@ -91,18 +91,22 @@ class ImportNormalizerService
         ])->first(fn ($value) => filled($value), '');
 
         $createdTimeRaw = collect([
-            data_get($normalized, 'created time'),
             data_get($normalized, 'created date'),
+            data_get($normalized, 'created time'),
             data_get($normalized, 'created at'),
             data_get($normalized, 'waktu dibuat'),
+            data_get($normalized, 'tanggal dibuat'),
         ])->first(fn ($value) => filled($value), '');
 
         $resolvedTimeRaw = collect([
-            data_get($normalized, 'resolved time'),
             data_get($normalized, 'resolved date'),
-            data_get($normalized, 'solved time'),
+            data_get($normalized, 'resolved time'),
             data_get($normalized, 'solved date'),
+            data_get($normalized, 'solved time'),
             data_get($normalized, 'waktu selesai'),
+            data_get($normalized, 'tanggal selesai'),
+            data_get($normalized, 'completed date'),
+            data_get($normalized, 'completed time'),
         ])->first(fn ($value) => filled($value), '');
 
         $createdTime = DateFormattingService::format($createdTimeRaw);

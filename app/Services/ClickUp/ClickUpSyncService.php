@@ -393,18 +393,26 @@ class ClickUpSyncService
         $clickupBrief = null;
         $clickupApps = null;
         $clickupCategory = null;
+        $clickupCreatedTime = null;
+        $clickupResolvedTime = null;
 
         $customFields = data_get($task, 'custom_fields', []);
         if (is_array($customFields)) {
             foreach ($customFields as $field) {
                 $fieldName = strtolower(trim((string) data_get($field, 'name', '')));
-                if ($fieldName === 'resolution' || $fieldName === 'resolusi') {
+                $fieldId = (string) data_get($field, 'id', '');
+
+                if ($fieldName === 'resolution' || $fieldName === 'resolusi' || $fieldId === 'c155dabd-5a8e-4409-8bd9-bec1c2e79ec8') {
                     $clickupResolution = data_get($field, 'value');
-                } elseif ($fieldName === 'requestor name' || $fieldName === 'nama requestor' || $fieldName === 'requestor') {
+                } elseif ($fieldName === 'requestor name' || $fieldName === 'nama requestor' || $fieldName === 'requestor' || $fieldId === 'b703d753-adc4-406e-a01b-d0b581cf66cd') {
                     $clickupRequestor = data_get($field, 'value');
-                } elseif ($fieldName === 'brief problem description' || $fieldName === 'deskripsi') {
+                } elseif ($fieldName === 'brief problem description' || $fieldName === 'deskripsi' || $fieldId === 'ca78bfeb-c360-45b0-9cb4-bf6e90db5b30') {
                     $clickupBrief = data_get($field, 'value');
-                } elseif ($fieldName === 'apps') {
+                } elseif ($fieldName === 'created date tickets' || $fieldName === 'created date' || $fieldName === 'created time' || $fieldId === '7b24c557-4735-4afc-a239-58347dd1a2e3') {
+                    $clickupCreatedTime = data_get($field, 'value');
+                } elseif ($fieldName === 'resolved date ticket' || $fieldName === 'resolved date' || $fieldName === 'resolved time' || $fieldName === 'solved date' || $fieldName === 'solved time' || $fieldId === 'b3f49b69-3095-4687-8b34-ea2fddd95cea') {
+                    $clickupResolvedTime = data_get($field, 'value');
+                } elseif ($fieldName === 'apps' || $fieldId === 'aec0cf66-4c70-41e1-9b61-311d4d1a8eb5') {
                     $valIndex = data_get($field, 'value');
                     if ($valIndex !== null) {
                         $options = data_get($field, 'type_config.options', []);
@@ -414,7 +422,7 @@ class ClickUpSyncService
                             $clickupApps = data_get($selected, 'name');
                         }
                     }
-                } elseif ($fieldName === 'ticket category' || $fieldName === 'category' || $fieldName === 'kategori') {
+                } elseif ($fieldName === 'ticket category' || $fieldName === 'category' || $fieldName === 'kategori' || $fieldId === 'ac661cf6-6078-4c36-b5e3-da7c74ddf7a8') {
                     $valIndex = data_get($field, 'value');
                     if ($valIndex !== null) {
                         $options = data_get($field, 'type_config.options', []);
@@ -463,6 +471,12 @@ class ClickUpSyncService
         }
         if (filled($clickupCategory)) {
             $attributes['category'] = $clickupCategory;
+        }
+        if (filled($clickupCreatedTime)) {
+            $attributes['created_time'] = DateFormattingService::format($clickupCreatedTime);
+        }
+        if (filled($clickupResolvedTime)) {
+            $attributes['resolved_time'] = DateFormattingService::format($clickupResolvedTime);
         }
 
         if (filled(data_get($extraData, 'description'))) {
