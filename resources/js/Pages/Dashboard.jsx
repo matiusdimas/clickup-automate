@@ -671,12 +671,6 @@ export default function Dashboard() {
             return;
         }
 
-        try {
-            await syncClickUp(true);
-        } catch (error) {
-            return;
-        }
-
         setActionMessage('Memulai proses import ke ClickUp & database lokal...');
         setImporting(true);
 
