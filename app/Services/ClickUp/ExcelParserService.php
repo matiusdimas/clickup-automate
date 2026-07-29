@@ -2,9 +2,17 @@
 
 namespace App\Services\ClickUp;
 
+use Maatwebsite\Excel\Concerns\ToArray;
 use Maatwebsite\Excel\Facades\Excel;
 use RuntimeException;
-use stdClass;
+
+class AnonymousArrayImport implements ToArray
+{
+    public function array(array $array)
+    {
+        return $array;
+    }
+}
 
 class ExcelParserService
 {
@@ -13,7 +21,7 @@ class ExcelParserService
      */
     public function parseFile($file): array
     {
-        $array = Excel::toArray(new stdClass(), $file);
+        $array = Excel::toArray(new AnonymousArrayImport(), $file);
         $rows = $array[0] ?? [];
 
         if (empty($rows)) {
