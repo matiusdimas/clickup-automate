@@ -127,12 +127,24 @@ class ImportNormalizerService
             data_get($normalized, 'technician initial'),
             data_get($normalized, 'technician'),
             data_get($normalized, 'nama teknisi'),
+            data_get($normalized, 'created by'),
             data_get($normalized, 'created_by'),
-            data_get($normalized, 'created by')
+            data_get($normalized, 'creator'),
+            data_get($normalized, 'pembuat'),
+            data_get($normalized, 'modified by'),
+            data_get($normalized, 'modified_by'),
+            data_get($normalized, 'owner'),
         ])->first(fn ($value) => filled($value), '');
 
         if (filled($techMappings) && filled($technician)) {
-            $mapping = collect($techMappings)->first(fn($m) => strtolower($m->original_name) === strtolower($technician));
+            $rawTech = strtolower(trim((string) $technician));
+            $rawUser = str_contains($rawTech, '@') ? explode('@', $rawTech)[0] : $rawTech;
+
+            $mapping = collect($techMappings)->first(function ($m) use ($rawTech, $rawUser) {
+                $orig = strtolower(trim((string) $m->original_name));
+                return $orig === $rawTech || $orig === $rawUser;
+            });
+
             if ($mapping) {
                 $technician = $mapping->mapped_name;
             }

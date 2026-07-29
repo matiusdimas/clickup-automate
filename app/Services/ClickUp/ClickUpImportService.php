@@ -48,6 +48,13 @@ class ClickUpImportService
             'processed_rows' => 0,
             'total_rows' => count($rows),
             'progress_percent' => 0,
+            'results' => [
+                'created' => 0,
+                'updated' => 0,
+                'skipped' => 0,
+                'failed' => 0,
+                'details' => [],
+            ],
         ], now()->addHours(6));
 
         return [
@@ -185,48 +192,118 @@ class ClickUpImportService
                 $finalBrief = implode("\n", $briefParts);
 
                 if ($localTask) {
-                    $updatePayload = [
-                        'name' => $this->buildTaskName($payload),
-                        'status' => $payload['status'],
-                    ];
+                    $newHash = $this->buildImportHash($payload, $finalBrief);
 
-                    $response = $this->apiClient->requestWithRetry(
-                        fn () => $this->apiClient->client()->put("/task/{$localTask->clickup_task_id}", $updatePayload)
-                    );
-
-                    if ($response->failed()) {
-                        $results['failed']++;
+                    // 1. Fast Hash Match Check
+                    if ($localTask->import_hash === $newHash) {
+                        $results['skipped']++;
                         $results['details'][] = [
                             'nomor_tiket' => $payload['nomor_tiket'],
-                            'aplikasi' => $payload['aplikasi'],
-                            'status' => 'failed',
-                            'message' => $response->json('err') ?? $response->body(),
+                            'aplikasi'    => $payload['aplikasi'],
+                            'status'      => 'skipped',
+                            'message'     => 'Data tidak berubah sejak import terakhir (skip).',
                         ];
                         continue;
                     }
 
-                    // Update custom fields individually via ClickUp V2 API
-                    $customFieldValues = [
-                        'ca78bfeb-c360-45b0-9cb4-bf6e90db5b30' => $finalBrief,
-                        'b703d753-adc4-406e-a01b-d0b581cf66cd' => $payload['requestor_name'],
-                        'c155dabd-5a8e-4409-8bd9-bec1c2e79ec8' => $payload['resolution'],
-                        '7b24c557-4735-4afc-a239-58347dd1a2e3' => $payload['created_time'],
-                        'b3f49b69-3095-4687-8b34-ea2fddd95cea' => $payload['resolved_time'],
-                        'b8c71da9-681b-4418-80e5-9dae2565e70a' => $payload['nomor_tiket'],
-                    ];
+                    // 2. Local DB Field-by-Field Diff Evaluator
+                    $newName   = $this->buildTaskName($payload);
+                    $newStatus = $payload['status'];
+
+                    $nameDiff   = $this->isFieldDifferent($newName, $localTask->name);
+                    $statusDiff = strtolower(trim($newStatus)) !== strtolower(trim((string) $localTask->status));
+
+                    $hasMainTaskDiff = $nameDiff || $statusDiff;
+
+                    // Evaluate Custom Field Diffs against DB local
+                    $customFieldValues = [];
+
+                    if ($this->isFieldDifferent($finalBrief, $localTask->description)) {
+                        $customFieldValues['ca78bfeb-c360-45b0-9cb4-bf6e90db5b30'] = $finalBrief;
+                    }
+
+                    if ($this->isFieldDifferent($payload['requestor_name'], $localTask->requestor_name)) {
+                        $customFieldValues['b703d753-adc4-406e-a01b-d0b581cf66cd'] = $payload['requestor_name'];
+                    }
+
+                    if ($this->isFieldDifferent($payload['resolution'], $localTask->resolution)) {
+                        $customFieldValues['c155dabd-5a8e-4409-8bd9-bec1c2e79ec8'] = $payload['resolution'];
+                    }
+
+                    if ($this->isFieldDifferent($payload['created_time'], $localTask->created_time)) {
+                        $customFieldValues['7b24c557-4735-4afc-a239-58347dd1a2e3'] = $payload['created_time'];
+                    }
+
+                    if ($this->isFieldDifferent($payload['resolved_time'], $localTask->resolved_time)) {
+                        $customFieldValues['b3f49b69-3095-4687-8b34-ea2fddd95cea'] = $payload['resolved_time'];
+                    }
+
+                    if ($this->isFieldDifferent($payload['nomor_tiket'], $localTask->tiket_id)) {
+                        $customFieldValues['b8c71da9-681b-4418-80e5-9dae2565e70a'] = $payload['nomor_tiket'];
+                    }
 
                     $rawCat = $payload['ticket_category'] ?? $payload['category'] ?? data_get($row, 'category') ?? data_get($row, 'ticket_category') ?? data_get($row, 'request type') ?? '';
-                    if (filled($rawCat)) {
+                    if (filled($rawCat) && $this->isFieldDifferent($rawCat, $localTask->category)) {
                         $categoryId = $this->normalizer->mapTicketCategory($rawCat);
                         if ($categoryId) {
                             $customFieldValues['ac661cf6-6078-4c36-b5e3-da7c74ddf7a8'] = $categoryId;
                         }
                     }
 
-                    if (filled($payload['aplikasi']) && $appId) {
+                    if (filled($payload['aplikasi']) && $appId && $this->isFieldDifferent($payload['aplikasi'], $localTask->aplikasi)) {
                         $customFieldValues['aec0cf66-4c70-41e1-9b61-311d4d1a8eb5'] = $appId;
                     }
 
+                    $totalChanges = ($hasMainTaskDiff ? 1 : 0) + count($customFieldValues);
+
+                    // 3. If zero fields differ between local DB and Excel, skip ClickUp API calls completely!
+                    if ($totalChanges === 0) {
+                        $updatedRecord = $this->syncService->upsertCacheFromRemoteTask(['id' => $localTask->clickup_task_id], $module->module_name, $payload);
+                        if ($updatedRecord) {
+                            $updatedRecord->updateQuietly(['import_hash' => $newHash]);
+                        } else {
+                            $localTask->updateQuietly(['import_hash' => $newHash]);
+                        }
+
+                        $results['skipped']++;
+                        $results['details'][] = [
+                            'nomor_tiket' => $payload['nomor_tiket'],
+                            'aplikasi'    => $payload['aplikasi'],
+                            'status'      => 'skipped',
+                            'message'     => 'Data di DB lokal dan Excel sama persis (skip API call).',
+                        ];
+                        continue;
+                    }
+
+                    // 4. Update Main Task properties ONLY if Name or Status changed
+                    $remoteTaskData = ['id' => $localTask->clickup_task_id];
+
+                    if ($hasMainTaskDiff) {
+                        $updatePayload = [];
+                        if ($nameDiff)   $updatePayload['name']   = $newName;
+                        if ($statusDiff) $updatePayload['status'] = $newStatus;
+
+                        $response = $this->apiClient->requestWithRetry(
+                            fn () => $this->apiClient->client()->put("/task/{$localTask->clickup_task_id}", $updatePayload)
+                        );
+
+                        if ($response->failed()) {
+                            $results['failed']++;
+                            $results['details'][] = [
+                                'nomor_tiket' => $payload['nomor_tiket'],
+                                'aplikasi'    => $payload['aplikasi'],
+                                'status'      => 'failed',
+                                'message'     => $response->json('err') ?? $response->body(),
+                            ];
+                            continue;
+                        }
+
+                        if (is_array($response->json())) {
+                            $remoteTaskData = $response->json();
+                        }
+                    }
+
+                    // 5. Update ONLY custom fields that actually changed
                     foreach ($customFieldValues as $fieldId => $val) {
                         if (filled($val)) {
                             $this->apiClient->requestWithRetry(
@@ -235,16 +312,18 @@ class ClickUpImportService
                         }
                     }
 
-                    $remoteTaskData = $response->json();
-                    if (is_array($remoteTaskData) && blank(data_get($remoteTaskData, 'id'))) {
-                        $remoteTaskData['id'] = $localTask->clickup_task_id;
+                    // 6. Persist DB Cache & Hash
+                    $updatedRecord = $this->syncService->upsertCacheFromRemoteTask($remoteTaskData, $module->module_name, $payload);
+                    if ($updatedRecord) {
+                        $updatedRecord->updateQuietly(['import_hash' => $newHash]);
                     }
-                    $this->syncService->upsertCacheFromRemoteTask($remoteTaskData, $module->module_name, $payload);
+
                     $results['updated']++;
                     $results['details'][] = [
                         'nomor_tiket' => $payload['nomor_tiket'],
-                        'aplikasi' => $payload['aplikasi'],
-                        'status' => 'updated',
+                        'aplikasi'    => $payload['aplikasi'],
+                        'status'      => 'updated',
+                        'message'     => "Updated {$totalChanges} field di ClickUp.",
                     ];
                     continue;
                 }
@@ -336,12 +415,16 @@ class ClickUpImportService
                     continue;
                 }
 
-                $this->syncService->upsertCacheFromRemoteTask($response->json(), $module->module_name, $payload);
+                $createdRecord = $this->syncService->upsertCacheFromRemoteTask($response->json(), $module->module_name, $payload);
+                // Persist hash so next import with the same data skips this ticket entirely
+                if ($createdRecord) {
+                    $createdRecord->updateQuietly(['import_hash' => $this->buildImportHash($payload, $finalBrief)]);
+                }
                 $results['created']++;
                 $results['details'][] = [
                     'nomor_tiket' => $payload['nomor_tiket'],
-                    'aplikasi' => $payload['aplikasi'],
-                    'status' => 'created',
+                    'aplikasi'    => $payload['aplikasi'],
+                    'status'      => 'created',
                 ];
             } catch (\Throwable $e) {
                 $results['failed']++;
@@ -361,13 +444,29 @@ class ClickUpImportService
                         'total_rows' => $totalRows,
                         'progress_percent' => $totalRows > 0 ? (int) round(($processed / $totalRows) * 100) : 100,
                         'results' => $results,
-                    ], now()->addHours(1));
+                    ], now()->addHours(6));
                 }
             }
         }
     } catch (\Throwable $e) {
             Log::error("ClickUp Import Error: " . $e->getMessage());
         } finally {
+            if ($importToken) {
+                $progress = Cache::get("import_progress_{$importToken}", []);
+                $currentStatus = data_get($progress, 'status');
+                $finalStatus = ($currentStatus === 'cancelled') ? 'cancelled' : 'completed';
+
+                Cache::put("import_progress_{$importToken}", [
+                    'import_token' => $importToken,
+                    'status' => $finalStatus,
+                    'processed_rows' => $processed,
+                    'total_rows' => max($totalRows, $processed),
+                    'progress_percent' => 100,
+                    'results' => $results,
+                    'finished_at' => now()->toIso8601String(),
+                ], now()->addHours(6));
+            }
+
             if (Cache::get(self::IMPORT_LOCK_KEY) === $importToken) {
                 Cache::forget(self::IMPORT_LOCK_KEY);
             }
@@ -384,6 +483,13 @@ class ClickUpImportService
             'processed_rows' => 0,
             'total_rows' => 0,
             'progress_percent' => 0,
+            'results' => [
+                'created' => 0,
+                'updated' => 0,
+                'skipped' => 0,
+                'failed' => 0,
+                'details' => [],
+            ],
         ]);
     }
 
@@ -480,6 +586,54 @@ class ClickUpImportService
         }
 
         return $taskName;
+    }
+
+    /**
+     * Build a stable MD5 fingerprint of the import payload.
+     * Used to detect whether a ticket has changed since the last import
+     * so we can skip all API calls for unchanged tickets.
+     */
+    private function buildImportHash(array $payload, string $finalBrief): string
+    {
+        return md5(implode('|', [
+            $this->buildTaskName($payload),
+            $payload['status'] ?? '',
+            $payload['requestor_name'] ?? '',
+            $payload['resolution'] ?? '',
+            $finalBrief,
+            $payload['created_time'] ?? '',
+            $payload['resolved_time'] ?? '',
+            $payload['nomor_tiket'] ?? '',
+            $payload['aplikasi'] ?? '',
+            $payload['technician'] ?? '',
+            $payload['due_by_time'] ?? '',
+            $payload['overdue_status'] ?? '',
+            $payload['item'] ?? '',
+            $payload['priority'] ?? '',
+        ]));
+    }
+
+    /**
+     * Helper to compare a new incoming string value from Excel with current local DB value.
+     * Returns true ONLY if the new value is filled and differs from local DB value.
+     */
+    private function isFieldDifferent(?string $newValue, ?string $currentValue): bool
+    {
+        if (blank($newValue)) {
+            return false;
+        }
+
+        $newStr  = trim((string) $newValue);
+        $currStr = trim((string) $currentValue);
+
+        if ($newStr === '') {
+            return false;
+        }
+
+        $newNorm  = str_replace(["\r\n", "\r"], "\n", $newStr);
+        $currNorm = str_replace(["\r\n", "\r"], "\n", $currStr);
+
+        return $newNorm !== $currNorm;
     }
 
     public function isImportCancelled(?string $importToken = null): bool

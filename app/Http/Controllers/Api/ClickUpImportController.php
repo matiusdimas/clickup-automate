@@ -41,10 +41,12 @@ class ClickUpImportController extends Controller
                 }
 
                 // Run import synchronously in Worker 1 (session lock is released!)
-                $this->importService->runImport($rows, $sourceFormat, $token);
+                $results = $this->importService->runImport($rows, $sourceFormat, $token);
 
                 unset($startData['rows']);
                 unset($startData['source_format']);
+                $startData['results'] = $results;
+                $startData['status'] = 'completed';
             }
 
             return response()->json([
