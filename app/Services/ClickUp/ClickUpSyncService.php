@@ -59,7 +59,13 @@ class ClickUpSyncService
         
         Cache::put(self::SYNC_LOCK_KEY, $syncToken, now()->addHours(6));
 
-        // Initialize progress immediately so frontend doesn't get 'missing' while background starts
+        // Ensure all active modules have list_id resolved from cached tasks
+        $modules = ClickUpModule::query()->where('is_active', true)->get();
+        foreach ($modules as $module) {
+            $this->resolveModuleListIdFromCache($module);
+        }
+
+        // Re-fetch modules with resolved list_id
         $modules = ClickUpModule::query()->where('is_active', true)->get();
         $this->initializeSyncProgress($syncToken, $modules);
 
@@ -75,6 +81,10 @@ class ClickUpSyncService
         set_time_limit(0);
 
         try {
+            $modules = ClickUpModule::query()->where('is_active', true)->get();
+            foreach ($modules as $module) {
+                $this->resolveModuleListIdFromCache($module);
+            }
             $modules = ClickUpModule::query()->where('is_active', true)->get();
 
             // Progress should be initialized by startSync, we just need to get it or recreate if lost
