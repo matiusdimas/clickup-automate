@@ -178,66 +178,14 @@ class ClickUpImportService
                 $finalBrief = implode("\n", $briefParts);
 
                 if ($localTask) {
-                    $updateFields = [];
-
-                    if (filled($finalBrief)) {
-                        $updateFields[] = [
-                            'id' => 'c0e86b86-d278-43e5-aebe-b9ea20839e9f',
-                            'value' => $finalBrief,
-                        ];
-                    }
-
-                    if (filled($payload['requestor_name'])) {
-                        $updateFields[] = [
-                            'id' => 'dfce0320-ea00-47b1-9cb6-c3ea4cbb3874',
-                            'value' => $payload['requestor_name'],
-                        ];
-                    }
-
-                    if (filled($payload['resolution'])) {
-                        $updateFields[] = [
-                            'id' => '07f620f4-500b-4680-bd94-39fb6fcab5fe',
-                            'value' => $payload['resolution'],
-                        ];
-                    }
-
-                    if (filled($payload['ticket_category'])) {
-                        $categoryId = $this->normalizer->mapTicketCategory($payload['ticket_category']);
-                        if ($categoryId) {
-                            $updateFields[] = [
-                                'id' => 'ac661cf6-6078-4c36-b5e3-da7c74ddf7a8',
-                                'value' => $categoryId,
-                            ];
-                        }
-                    }
-
-                    if (filled($payload['aplikasi'])) {
-                        if ($appId) {
-                            $updateFields[] = [
-                                'id' => 'aec0cf66-4c70-41e1-9b61-311d4d1a8eb5',
-                                'value' => $appId,
-                            ];
-                        }
-                    }
-
                     $updatePayload = [
                         'name' => $this->buildTaskName($payload),
                         'status' => $payload['status'],
                     ];
 
-                    if (!empty($updateFields)) {
-                        $updatePayload['custom_fields'] = $updateFields;
-                    }
-
-                    $response = $this->apiClient->requestWithRetry(fn () => $this->apiClient->client()->put("/task/{$localTask->clickup_task_id}", $updatePayload));
-
-                    if ($response->failed() && str_contains(strtolower($response->body()), 'cannot find the custom field')) {
-                        $fallbackPayload = [
-                            'name' => $this->buildTaskName($payload),
-                            'status' => $payload['status'],
-                        ];
-                        $response = $this->apiClient->requestWithRetry(fn () => $this->apiClient->client()->put("/task/{$localTask->clickup_task_id}", $fallbackPayload));
-                    }
+                    $response = $this->apiClient->requestWithRetry(
+                        fn () => $this->apiClient->client()->put("/task/{$localTask->clickup_task_id}", $updatePayload)
+                    );
 
                     if ($response->failed()) {
                         $results['failed']++;
@@ -248,6 +196,32 @@ class ClickUpImportService
                             'message' => $response->json('err') ?? $response->body(),
                         ];
                         continue;
+                    }
+
+                    // Update custom fields individually via ClickUp V2 API
+                    $customFieldValues = [
+                        'ca78bfeb-c360-45b0-9cb4-bf6e90db5b30' => $finalBrief,
+                        'b703d753-adc4-406e-a01b-d0b581cf66cd' => $payload['requestor_name'],
+                        'c155dabd-5a8e-4409-8bd9-bec1c2e79ec8' => $payload['resolution'],
+                    ];
+
+                    if (filled($payload['ticket_category'])) {
+                        $categoryId = $this->normalizer->mapTicketCategory($payload['ticket_category']);
+                        if ($categoryId) {
+                            $customFieldValues['ac661cf6-6078-4c36-b5e3-da7c74ddf7a8'] = $categoryId;
+                        }
+                    }
+
+                    if (filled($payload['aplikasi']) && $appId) {
+                        $customFieldValues['aec0cf66-4c70-41e1-9b61-311d4d1a8eb5'] = $appId;
+                    }
+
+                    foreach ($customFieldValues as $fieldId => $val) {
+                        if (filled($val)) {
+                            $this->apiClient->requestWithRetry(
+                                fn () => $this->apiClient->client()->post("/task/{$localTask->clickup_task_id}/field/{$fieldId}", ['value' => $val])
+                            );
+                        }
                     }
 
                     $remoteTaskData = $response->json();
@@ -272,21 +246,21 @@ class ClickUpImportService
 
                 if (filled($finalBrief)) {
                     $taskPayload['custom_fields'][] = [
-                        'id' => 'c0e86b86-d278-43e5-aebe-b9ea20839e9f',
+                        'id' => 'ca78bfeb-c360-45b0-9cb4-bf6e90db5b30',
                         'value' => $finalBrief,
                     ];
                 }
 
                 if (filled($payload['requestor_name'])) {
                     $taskPayload['custom_fields'][] = [
-                        'id' => 'dfce0320-ea00-47b1-9cb6-c3ea4cbb3874',
+                        'id' => 'b703d753-adc4-406e-a01b-d0b581cf66cd',
                         'value' => $payload['requestor_name'],
                     ];
                 }
 
                 if (filled($payload['resolution'])) {
                     $taskPayload['custom_fields'][] = [
-                        'id' => '07f620f4-500b-4680-bd94-39fb6fcab5fe',
+                        'id' => 'c155dabd-5a8e-4409-8bd9-bec1c2e79ec8',
                         'value' => $payload['resolution'],
                     ];
                 }
@@ -299,6 +273,13 @@ class ClickUpImportService
                             'value' => $categoryId,
                         ];
                     }
+                }
+
+                if (filled($payload['aplikasi']) && $appId) {
+                    $taskPayload['custom_fields'][] = [
+                        'id' => 'aec0cf66-4c70-41e1-9b61-311d4d1a8eb5',
+                        'value' => $appId,
+                    ];
                 }
 
                 $response = $this->apiClient->requestWithRetry(fn () => $this->apiClient->client()->post("/list/{$module->clickup_list_id}/task", $taskPayload));
