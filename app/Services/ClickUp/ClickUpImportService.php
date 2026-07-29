@@ -141,13 +141,13 @@ class ClickUpImportService
 
                 $module = ClickUpModule::query()->where('is_active', true)->first();
 
-                if (! $module) {
+                if (! $module || blank($module->clickup_list_id)) {
                     $results['skipped']++;
                     $results['details'][] = [
                         'nomor_tiket' => $payload['nomor_tiket'],
                         'aplikasi' => $payload['aplikasi'],
                         'status' => 'skipped',
-                        'message' => 'Sistem belum memiliki Module aktif yang dikonfigurasi.',
+                        'message' => 'Sistem belum memiliki Module aktif dengan List ID yang dikonfigurasi.',
                     ];
                     continue;
                 }
