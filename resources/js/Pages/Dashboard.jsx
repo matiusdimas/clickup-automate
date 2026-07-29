@@ -671,18 +671,20 @@ export default function Dashboard() {
             return;
         }
 
+        setImporting(true);
+
         // Langkah 1: Sync ClickUp terlebih dahulu
         setActionMessage('Langkah 1/2: Menyinkronkan data ClickUp terbaru sebelum import...');
         try {
             await syncClickUp(true);
         } catch (error) {
             setActionMessage('Sinkronisasi gagal. Import dibatalkan.');
+            setImporting(false);
             return;
         }
 
         // Langkah 2: Import data Excel
         setActionMessage('Langkah 2/2: Memproses import Excel ke ClickUp & database lokal...');
-        setImporting(true);
 
         try {
             const payloadRows = importPreview.map(({ review_status, review_reason, ...row }) => row);
@@ -877,10 +879,10 @@ export default function Dashboard() {
                                 <button
                                     type="button"
                                     onClick={syncClickUp}
-                                    disabled={syncing}
+                                    disabled={syncing || importing}
                                     className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
-                                    {syncing ? 'Menyinkronkan...' : 'Sync Data ClickUp Terbaru'}
+                                    {syncing ? 'Menyinkronkan...' : importing ? 'Memproses Import...' : 'Sync Data ClickUp Terbaru'}
                                 </button>
                             </div>
 
@@ -1524,17 +1526,18 @@ export default function Dashboard() {
                                             <button
                                                 type="button"
                                                 onClick={resetImportState}
-                                                className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-300 transition hover:bg-white/10"
+                                                disabled={importing || syncing}
+                                                className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                                             >
                                                 Reset
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={submitImport}
-                                                disabled={importing || importPreview.length === 0}
+                                                disabled={importing || syncing || importPreview.length === 0}
                                                 className="rounded-2xl bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
                                             >
-                                                {importing ? 'Submit...' : 'Submit Import'}
+                                                {importing ? 'Memproses...' : 'Submit Import'}
                                             </button>
                                         </div>
                                     </div>
