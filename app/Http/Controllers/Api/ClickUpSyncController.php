@@ -62,4 +62,22 @@ class ClickUpSyncController extends Controller
             ], 500);
         }
     }
+
+    public function cancel(Request $request, ?string $syncToken = null): JsonResponse
+    {
+        try {
+            $token = $syncToken ?: $request->input('sync_token');
+            $result = $this->syncService->cancelSync($token);
+
+            return response()->json([
+                'success' => true,
+                ...$result,
+            ]);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 500);
+        }
+    }
 }

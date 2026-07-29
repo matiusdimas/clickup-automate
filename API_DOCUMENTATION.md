@@ -307,6 +307,28 @@ Memicu sinkronisasi data terbaru dari ClickUp Views ke database lokal.
 
 ---
 
+### C. Hentikan / Cancel Sync (`POST /api/clickup/sync/cancel` atau `POST /api/clickup/sync/{syncToken}/cancel`)
+
+Menghentikan proses sinkronisasi data yang sedang berjalan secara instan dan melepaskan session lock.
+
+#### Contoh Request cURL:
+```bash
+curl -X POST "http://127.0.0.1:8000/api/clickup/sync/cancel" \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+#### Respon JSON (200 OK):
+```json
+{
+  "success": true,
+  "status": "cancelled",
+  "sync_token": "sync-unique-uuid",
+  "message": "Proses sinkronisasi berhasil dihentikan."
+}
+```
+
+---
+
 ### B. Progress Monitoring Sync (`GET /api/clickup/sync/{syncToken}/progress`)
 
 Memantau status dan persentase progress sync yang sedang berjalan.

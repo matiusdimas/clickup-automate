@@ -88,10 +88,10 @@ class ClickUpSyncService
         $fetchedTasks = 0;
 
             while (true) {
-                // Ensure lock hasn't been maliciously cleared or expired
-                if (!Cache::has(self::SYNC_LOCK_KEY) || Cache::get(self::SYNC_LOCK_KEY) !== $syncToken) {
-                    Log::warning("Sync lock lost or hijacked for token: {$syncToken}. Aborting loop.");
-                    break;
+                if ($this->isSyncCancelled($syncToken)) {
+                    $this->syncProgressFromStates($syncToken, $moduleStates, $cachedTasks, $fetchedTasks, 'cancelled');
+                    Log::info("ClickUp Sync cancelled for token: {$syncToken}");
+                    return;
                 }
 
                 $activeModules = collect($moduleStates)
@@ -234,6 +234,47 @@ class ClickUpSyncService
     private function progressKey(string $syncToken): string
     {
         return 'clickup:sync:' . $syncToken;
+    }
+
+    public function isSyncCancelled(?string $syncToken = null): bool
+    {
+        if (blank($syncToken)) {
+            return false;
+        }
+
+        if (Cache::get("clickup:sync:cancel:{$syncToken}")) {
+            return true;
+        }
+
+        $progress = Cache::get($this->progressKey($syncToken));
+        return data_get($progress, 'status') === 'cancelled';
+    }
+
+    public function cancelSync(?string $syncToken = null): array
+    {
+        if (blank($syncToken)) {
+            $syncToken = Cache::get(self::SYNC_LOCK_KEY);
+        }
+
+        if (filled($syncToken)) {
+            Cache::put("clickup:sync:cancel:{$syncToken}", true, now()->addHours(1));
+
+            $progressKey = $this->progressKey($syncToken);
+            $progress = Cache::get($progressKey, []);
+            if (is_array($progress)) {
+                $progress['status'] = 'cancelled';
+                $progress['finished_at'] = now()->toIso8601String();
+                Cache::put($progressKey, $progress, now()->addHours(6));
+            }
+        }
+
+        Cache::forget(self::SYNC_LOCK_KEY);
+
+        return [
+            'status' => 'cancelled',
+            'sync_token' => $syncToken,
+            'message' => 'Proses sinkronisasi berhasil dihentikan.',
+        ];
     }
 
     private function initializeSyncProgress(string $syncToken, $modules): array

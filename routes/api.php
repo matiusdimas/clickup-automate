@@ -27,10 +27,14 @@ Route::prefix('clickup')->middleware(\App\Http\Middleware\CheckApiAuth::class)->
     
     // Sync
     Route::post('/sync', [ClickUpSyncController::class, 'sync']);
+    Route::post('/sync/cancel', [ClickUpSyncController::class, 'cancel']);
+    Route::post('/sync/{syncToken}/cancel', [ClickUpSyncController::class, 'cancel']);
     Route::get('/sync/{syncToken}/progress', [ClickUpSyncController::class, 'progress']);
     
     // Import
     Route::post('/import', [ClickUpImportController::class, 'import']);
+    Route::post('/import/cancel', [ClickUpImportController::class, 'cancel']);
+    Route::post('/import/{importToken}/cancel', [ClickUpImportController::class, 'cancel']);
     Route::get('/import/{importToken}/progress', [ClickUpImportController::class, 'progress']);
     Route::post('/import/upload-preview', [ClickUpImportController::class, 'uploadPreview']);
     

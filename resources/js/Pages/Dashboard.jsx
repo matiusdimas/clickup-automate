@@ -281,13 +281,15 @@ export default function Dashboard() {
         activeSyncTimer.current = setInterval(async () => {
             try {
                 const data = await fetchSyncProgress(token);
-                if (data?.status === 'done' || data?.status === 'failed' || data?.status === 'missing' || !data) {
+                if (data?.status === 'done' || data?.status === 'cancelled' || data?.status === 'failed' || data?.status === 'missing' || !data) {
                     clearInterval(activeSyncTimer.current);
                     activeSyncTimer.current = null;
                     setSyncing(false);
                     localStorage.removeItem('clickup_active_sync_token');
                     if (data?.status === 'done') {
                         setActionMessage('Sinkronisasi selesai.');
+                    } else if (data?.status === 'cancelled') {
+                        setActionMessage('Sinkronisasi dihentikan oleh pengguna.');
                     }
                 }
             } catch (error) {
@@ -311,7 +313,7 @@ export default function Dashboard() {
 
         activeImportTimer.current = setInterval(async () => {
             const data = await fetchImportProgress(token);
-            if (data?.status === 'completed' || data?.status === 'failed' || !data) {
+            if (data?.status === 'completed' || data?.status === 'cancelled' || data?.status === 'failed' || !data) {
                 clearInterval(activeImportTimer.current);
                 activeImportTimer.current = null;
                 setImporting(false);
@@ -326,6 +328,8 @@ export default function Dashboard() {
                     } else {
                         setActionMessage('Import selesai diproses.');
                     }
+                } else if (data?.status === 'cancelled') {
+                    setActionMessage('Import dihentikan oleh pengguna.');
                 }
             }
         }, 1000);
@@ -882,14 +886,54 @@ export default function Dashboard() {
                                     </p>
                                 </div>
 
-                                <button
-                                    type="button"
-                                    onClick={syncClickUp}
-                                    disabled={syncing || importing}
-                                    className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    {syncing ? 'Menyinkronkan...' : importing ? 'Memproses Import...' : 'Sync Data ClickUp Terbaru'}
-                                </button>
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={syncClickUp}
+                                        disabled={syncing || importing}
+                                        className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {syncing ? 'Menyinkronkan...' : importing ? 'Memproses Import...' : 'Sync Data ClickUp Terbaru'}
+                                    </button>
+                                    {syncing && (
+                                        <button
+                                            type="button"
+                                            onClick={async () => {
+                                                const token = localStorage.getItem('clickup_active_sync_token');
+                                                await apiFetch(token ? `${apiBase}/sync/${token}/cancel` : `${apiBase}/sync/cancel`, { method: 'POST' });
+                                                if (activeSyncTimer.current) {
+                                                    clearInterval(activeSyncTimer.current);
+                                                    activeSyncTimer.current = null;
+                                                }
+                                                setSyncing(false);
+                                                localStorage.removeItem('clickup_active_sync_token');
+                                                setActionMessage('Proses sinkronisasi dihentikan oleh pengguna.');
+                                            }}
+                                            className="inline-flex items-center justify-center rounded-2xl border border-rose-500/40 bg-rose-500/20 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/30"
+                                        >
+                                            Hentikan Sync
+                                        </button>
+                                    )}
+                                    {importing && (
+                                        <button
+                                            type="button"
+                                            onClick={async () => {
+                                                const token = localStorage.getItem('clickup_active_import_token');
+                                                await apiFetch(token ? `${apiBase}/import/${token}/cancel` : `${apiBase}/import/cancel`, { method: 'POST' });
+                                                if (activeImportTimer.current) {
+                                                    clearInterval(activeImportTimer.current);
+                                                    activeImportTimer.current = null;
+                                                }
+                                                setImporting(false);
+                                                localStorage.removeItem('clickup_active_import_token');
+                                                setActionMessage('Proses import dihentikan oleh pengguna.');
+                                            }}
+                                            className="inline-flex items-center justify-center rounded-2xl border border-rose-500/40 bg-rose-500/20 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/30"
+                                        >
+                                            Hentikan Import
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="mt-6 grid gap-3 sm:grid-cols-3">

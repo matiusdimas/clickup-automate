@@ -95,4 +95,22 @@ class ClickUpImportController extends Controller
             ], 422);
         }
     }
+
+    public function cancel(Request $request, ?string $importToken = null): JsonResponse
+    {
+        try {
+            $token = $importToken ?: $request->input('import_token');
+            $result = $this->importService->cancelImport($token);
+
+            return response()->json([
+                'success' => true,
+                ...$result,
+            ]);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 500);
+        }
+    }
 }

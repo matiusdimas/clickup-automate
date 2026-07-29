@@ -105,10 +105,17 @@ class ClickUpImportService
 
         try {
             foreach ($rows as $row) {
-                // Check if lock was lost
-                if (!Cache::has(self::IMPORT_LOCK_KEY) || Cache::get(self::IMPORT_LOCK_KEY) !== $importToken) {
-                    Log::warning("Import lock lost for token: {$importToken}. Aborting.");
-                    break;
+                if ($this->isImportCancelled($importToken)) {
+                    Cache::put("import_progress_{$importToken}", [
+                        'status' => 'cancelled',
+                        'processed_rows' => $processed,
+                        'total_rows' => $totalRows,
+                        'progress_percent' => $totalRows > 0 ? (int) floor($processed / $totalRows * 100) : 100,
+                        'results' => $results,
+                        'finished_at' => now()->toIso8601String(),
+                    ], now()->addHours(6));
+                    Log::info("Import cancelled by user for token: {$importToken}");
+                    return $results;
                 }
 
                 try {
@@ -473,5 +480,46 @@ class ClickUpImportService
         }
 
         return $taskName;
+    }
+
+    public function isImportCancelled(?string $importToken = null): bool
+    {
+        if (blank($importToken)) {
+            return false;
+        }
+
+        if (Cache::get("clickup:import:cancel:{$importToken}")) {
+            return true;
+        }
+
+        $progress = Cache::get("import_progress_{$importToken}");
+        return data_get($progress, 'status') === 'cancelled';
+    }
+
+    public function cancelImport(?string $importToken = null): array
+    {
+        if (blank($importToken)) {
+            $importToken = Cache::get(self::IMPORT_LOCK_KEY);
+        }
+
+        if (filled($importToken)) {
+            Cache::put("clickup:import:cancel:{$importToken}", true, now()->addHours(1));
+
+            $progressKey = "import_progress_{$importToken}";
+            $progress = Cache::get($progressKey, []);
+            if (is_array($progress)) {
+                $progress['status'] = 'cancelled';
+                $progress['finished_at'] = now()->toIso8601String();
+                Cache::put($progressKey, $progress, now()->addHours(6));
+            }
+        }
+
+        Cache::forget(self::IMPORT_LOCK_KEY);
+
+        return [
+            'status' => 'cancelled',
+            'import_token' => $importToken,
+            'message' => 'Proses import berhasil dihentikan.',
+        ];
     }
 }
