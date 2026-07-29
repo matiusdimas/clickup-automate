@@ -671,7 +671,17 @@ export default function Dashboard() {
             return;
         }
 
-        setActionMessage('Memulai proses import ke ClickUp & database lokal...');
+        // Langkah 1: Sync ClickUp terlebih dahulu
+        setActionMessage('Langkah 1/2: Menyinkronkan data ClickUp terbaru sebelum import...');
+        try {
+            await syncClickUp(true);
+        } catch (error) {
+            setActionMessage('Sinkronisasi gagal. Import dibatalkan.');
+            return;
+        }
+
+        // Langkah 2: Import data Excel
+        setActionMessage('Langkah 2/2: Memproses import Excel ke ClickUp & database lokal...');
         setImporting(true);
 
         try {
