@@ -50,7 +50,7 @@ class DashboardFilterDTO
         $month = null;
 
         if ($periodStr !== 'all' && $periodStr !== 'custom' && $periodStr !== '') {
-            if ($periodStr === 'current') {
+            if ($periodStr === 'current' || str_contains($periodStr, 'current') || str_contains($periodStr, 'bulan ini')) {
                 $now = Carbon::now();
                 $year = $now->year;
                 $month = $now->month;
@@ -60,18 +60,10 @@ class DashboardFilterDTO
                 $month = (int) $matches[2];
                 $periodStr = sprintf('%04d-%02d', $year, $month);
             } else {
-                $reqYear = $request->query('year');
-                $reqMonth = $request->query('month');
-                if (is_numeric($reqYear) && is_numeric($reqMonth)) {
-                    $year = (int) $reqYear;
-                    $month = (int) $reqMonth;
-                    $periodStr = sprintf('%04d-%02d', $year, $month);
-                } else {
-                    $now = Carbon::now();
-                    $year = $now->year;
-                    $month = $now->month;
-                    $periodStr = $now->format('Y-m');
-                }
+                $now = Carbon::now();
+                $year = $now->year;
+                $month = $now->month;
+                $periodStr = $now->format('Y-m');
             }
         } elseif ($startDate || $endDate) {
             $periodStr = 'custom';
