@@ -217,12 +217,12 @@ class DashboardAnalyticsService
                 'available_filters' => $availableFilters,
                 'data' => [
                     'summary' => $summary,
-                    'by_module' => $byModule,
-                    'by_application' => $byAplikasi,
-                    'by_status' => $byStatus,
-                    'by_priority' => $byPriority,
-                    'by_technician' => $byTechnician,
-                    'recent_tasks' => $recentTasks,
+                    'by_module' => $byModule->values()->toArray(),
+                    'by_application' => $byAplikasi->values()->toArray(),
+                    'by_status' => $byStatus->values()->toArray(),
+                    'by_priority' => $byPriority->values()->toArray(),
+                    'by_technician' => $byTechnician->values()->toArray(),
+                    'recent_tasks' => $recentTasks->values()->toArray(),
                 ],
             ];
         });
