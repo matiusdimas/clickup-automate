@@ -54,31 +54,47 @@ class DashboardFilterService
             $startDate = $dto->startDate ? Carbon::parse($dto->startDate)->startOfDay() : null;
             $endDate = $dto->endDate ? Carbon::parse($dto->endDate)->endOfDay() : null;
 
-            $query->where(function ($dateQ) use ($startDate, $endDate) {
-                $dateQ->where(function ($sub) use ($startDate, $endDate) {
-                    $sub->whereNotNull('created_time')
-                        ->where('created_time', '!=', '');
-                    if ($startDate) {
-                        $sub->where('created_time', '>=', $startDate->toDateTimeString());
-                    }
-                    if ($endDate) {
-                        $sub->where('created_time', '<=', $endDate->toDateTimeString());
-                    }
-                });
+            if ($startDate || $endDate) {
+                $query->where(function ($dateQ) use ($startDate, $endDate) {
+                    $dateQ->whereNotNull('created_time')->where('created_time', '!=', '');
 
-                if ($startDate || $endDate) {
-                    $dateQ->orWhere(function ($sub) use ($startDate, $endDate) {
-                        $sub->whereNotNull('created_time')
-                            ->where('created_time', '!=', '');
-                        if ($startDate) {
-                            $sub->where('created_time', '>=', $startDate->format('Y-m-d'));
+                    // Generate date string patterns for every day in the range if range <= 90 days
+                    $patterns = [];
+                    if ($startDate && $endDate && $startDate->diffInDays($endDate) <= 90) {
+                        $curr = $startDate->copy();
+                        while ($curr->lte($endDate)) {
+                            // SDP string format e.g. "Aug 01, 2026" or "Aug 1, 2026"
+                            $patterns[] = $curr->format('M d, Y');
+                            $patterns[] = $curr->format('M j, Y');
+                            // ISO format e.g. "2026-08-01"
+                            $patterns[] = $curr->format('Y-m-d');
+                            // Slash format e.g. "08/01/2026"
+                            $patterns[] = $curr->format('m/d/Y');
+                            $patterns[] = $curr->format('d/m/Y');
+                            $curr->addDay();
                         }
-                        if ($endDate) {
-                            $sub->where('created_time', '<=', $endDate->format('Y-m-d') . ' 23:59:59');
+                    }
+
+                    $dateQ->where(function ($sub) use ($startDate, $endDate, $patterns) {
+                        if (! empty($patterns)) {
+                            $sub->where(function ($pSub) use ($patterns) {
+                                foreach ($patterns as $pat) {
+                                    $pSub->orWhere('created_time', 'like', "{$pat}%");
+                                }
+                            });
                         }
+
+                        $sub->orWhere(function ($dtSub) use ($startDate, $endDate) {
+                            if ($startDate) {
+                                $dtSub->where('created_time', '>=', $startDate->toDateTimeString());
+                            }
+                            if ($endDate) {
+                                $dtSub->where('created_time', '<=', $endDate->toDateTimeString());
+                            }
+                        });
                     });
-                }
-            });
+                });
+            }
         } elseif (! $dto->isAllTime() && $dto->year !== null && $dto->month !== null) {
             $year = $dto->year;
             $month = $dto->month;
