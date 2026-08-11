@@ -49,26 +49,44 @@ class DashboardFilterService
             $query->where('technician', $tech);
         }
 
-        // 5. Date / Month Filter (default to current month unless 'all' is requested)
+        // 5. Date / Month Filter strictly based on actual ticket creation date (created_time)
         if (! $dto->isAllTime() && $dto->year !== null && $dto->month !== null) {
             $year = $dto->year;
             $month = $dto->month;
             $monthPad = sprintf('%02d', $month);
             $monthName3Letter = Carbon::createFromDate($year, $month, 1)->format('M');
             $yearMonthIso = "{$year}-{$monthPad}";
+            $slashYearMonth = "{$monthPad}/%/{$year}";
+            $slashMonthYear = "%/{$monthPad}/{$year}";
 
-            $query->where(function ($dateQ) use ($year, $month, $monthName3Letter, $yearMonthIso) {
-                $dateQ->where(function ($sub) use ($year, $month) {
-                    $sub->whereYear('created_at', $year)
-                        ->whereMonth('created_at', $month);
-                })
-                ->orWhere(function ($sub) use ($year, $monthName3Letter, $yearMonthIso) {
+            $query->where(function ($dateQ) use ($year, $month, $monthName3Letter, $yearMonthIso, $slashYearMonth, $slashMonthYear) {
+                // SDP / ClickUp formatted string: "Jul 29, 2026 10:24 AM"
+                $dateQ->where(function ($sub) use ($year, $monthName3Letter) {
                     $sub->whereNotNull('created_time')
                         ->where('created_time', '!=', '')
-                        ->where(function ($strQ) use ($year, $monthName3Letter, $yearMonthIso) {
-                            $strQ->where('created_time', 'like', "%{$monthName3Letter}%{$year}%")
-                                 ->orWhere('created_time', 'like', "{$yearMonthIso}%");
+                        ->where('created_time', 'like', "%{$monthName3Letter}%{$year}%");
+                })
+                // ISO format: "2026-07-29..."
+                ->orWhere(function ($sub) use ($yearMonthIso) {
+                    $sub->whereNotNull('created_time')
+                        ->where('created_time', '!=', '')
+                        ->where('created_time', 'like', "{$yearMonthIso}%");
+                })
+                // Slash format: "07/29/2026..." or "29/07/2026..."
+                ->orWhere(function ($sub) use ($slashYearMonth, $slashMonthYear) {
+                    $sub->whereNotNull('created_time')
+                        ->where('created_time', '!=', '')
+                        ->where(function ($sQ) use ($slashYearMonth, $slashMonthYear) {
+                            $sQ->where('created_time', 'like', "{$slashYearMonth}%")
+                               ->orWhere('created_time', 'like', "{$slashMonthYear}%");
                         });
+                })
+                // Direct timestamp / datetime column matching if converted
+                ->orWhere(function ($sub) use ($year, $month) {
+                    $sub->whereNotNull('created_time')
+                        ->where('created_time', '!=', '')
+                        ->whereYear('created_time', $year)
+                        ->whereMonth('created_time', $month);
                 });
             });
         }
@@ -133,11 +151,29 @@ class DashboardFilterService
             return ucwords($st);
         })->unique()->values()->toArray();
 
-        // Generate Available Month Options (Current month + past 12 months)
-        $periods = [
-            ['value' => 'current', 'label' => 'Bulan Ini (' . Carbon::now()->isoFormat('MMMM YYYY') . ')'],
-            ['value' => 'all', 'label' => 'Semua Waktu (All Time)'],
-        ];
+        // Extract distinct ticket creation months dynamically from created_time
+        $rawCreatedTimes = ClickUpTaskCache::query()
+            ->select('created_time')
+            ->whereNotNull('created_time')
+            ->where('created_time', '!=', '')
+            ->distinct()
+            ->pluck('created_time');
+
+        $detectedMonths = [];
+        foreach ($rawCreatedTimes as $rawDate) {
+            $parsed = DateFormattingService::parseToCarbon($rawDate);
+            if ($parsed) {
+                $ym = $parsed->format('Y-m');
+                $detectedMonths[$ym] = [
+                    'year' => $parsed->year,
+                    'month' => $parsed->month,
+                    'ym' => $ym,
+                ];
+            }
+        }
+
+        // Sort descending (newest month first)
+        krsort($detectedMonths);
 
         $indonesianMonths = [
             1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
@@ -145,13 +181,22 @@ class DashboardFilterService
             9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
         ];
 
-        for ($i = 0; $i < 12; $i++) {
-            $dt = Carbon::now()->subMonths($i);
-            $val = $dt->format('Y-m');
-            $label = ($indonesianMonths[$dt->month] ?? $dt->format('F')) . ' ' . $dt->year;
+        $periods = [
+            ['value' => 'current', 'label' => 'Bulan Ini (' . Carbon::now()->isoFormat('MMMM YYYY') . ')'],
+            ['value' => 'all', 'label' => 'Semua Waktu (All Time)'],
+        ];
 
-            // Avoid duplicating 'current'
-            if ($i > 0) {
+        foreach ($detectedMonths as $ym => $info) {
+            $label = ($indonesianMonths[$info['month']] ?? Carbon::createFromDate($info['year'], $info['month'], 1)->format('F')) . ' ' . $info['year'];
+            $periods[] = ['value' => $ym, 'label' => $label];
+        }
+
+        // Fallback: If no distinct created_time detected, provide current year months
+        if (count($detectedMonths) === 0) {
+            for ($i = 1; $i <= 12; $i++) {
+                $dt = Carbon::now()->subMonths($i - 1);
+                $val = $dt->format('Y-m');
+                $label = ($indonesianMonths[$dt->month] ?? $dt->format('F')) . ' ' . $dt->year;
                 $periods[] = ['value' => $val, 'label' => $label];
             }
         }

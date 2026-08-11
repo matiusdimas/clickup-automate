@@ -34,4 +34,30 @@ class DateFormattingService
             return $trimmed;
         }
     }
+
+    /**
+     * Safely parse any date string format into a Carbon instance, returning null on failure.
+     */
+    public static function parseToCarbon(?string $dateString): ?Carbon
+    {
+        if (blank($dateString) || $dateString === '-' || strtolower(trim((string) $dateString)) === 'not assigned') {
+            return null;
+        }
+
+        $trimmed = trim((string) $dateString);
+
+        if (is_numeric($trimmed)) {
+            $timestamp = (int) $trimmed;
+            if (strlen((string) $timestamp) > 11) {
+                $timestamp = (int) floor($timestamp / 1000);
+            }
+            return Carbon::createFromTimestamp($timestamp);
+        }
+
+        try {
+            return Carbon::parse($trimmed);
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
 }

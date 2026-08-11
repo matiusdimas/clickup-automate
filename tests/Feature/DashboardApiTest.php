@@ -84,4 +84,41 @@ class DashboardApiTest extends TestCase
         $response->assertStatus(200);
         $this->assertEquals(Carbon::now()->format('Y-m'), $response->json('filters.period'));
     }
+
+    public function test_month_filtering_relies_strictly_on_created_time_not_db_created_at()
+    {
+        $token = 'test-token-123';
+        config(['services.api.token' => $token]);
+
+        // Task A: Actual ticket date in June 2026, DB row inserted in July 2026
+        ClickUpTaskCache::create([
+            'clickup_task_id' => 'task-june',
+            'name' => 'June Ticket',
+            'tipe_aplikasi' => 'CAFEINS',
+            'status' => 'Open',
+            'created_time' => 'Jun 15, 2026 10:00 AM',
+            'created_at' => Carbon::create(2026, 7, 10, 12, 0, 0), // DB row inserted in July
+        ]);
+
+        // Task B: Actual ticket date in July 2026
+        ClickUpTaskCache::create([
+            'clickup_task_id' => 'task-july',
+            'name' => 'July Ticket',
+            'tipe_aplikasi' => 'CAFEINS',
+            'status' => 'Closed',
+            'created_time' => 'Jul 20, 2026 02:00 PM',
+            'created_at' => Carbon::create(2026, 7, 20, 14, 0, 0),
+        ]);
+
+        // Query July 2026
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+        ])->getJson('/api/clickup/dashboard?period=2026-07');
+
+        $response->assertStatus(200);
+        $summary = $response->json('data.summary');
+
+        // Only Task B (July Ticket) should be counted in July 2026
+        $this->assertEquals(1, $summary['total_tasks']);
+    }
 }

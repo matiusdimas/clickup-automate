@@ -18,6 +18,9 @@ class GetTasksRequest extends FormRequest
             'aplikasi' => ['nullable', 'string', 'max:100'],
             'technician' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'string', 'max:50'],
+            'period' => ['nullable', 'string', 'max:20'],
+            'month' => ['nullable', 'string', 'max:20'],
+            'year' => ['nullable', 'integer'],
             'search' => ['nullable', 'string', 'max:200'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ];

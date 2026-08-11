@@ -2,35 +2,36 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\DTOs\DashboardFilterDTO;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\GetTasksRequest;
 use App\Models\ClickUpTaskCache;
+use App\Services\ClickUp\DashboardFilterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ClickUpTaskController extends Controller
 {
-    public function index(GetTasksRequest $request): JsonResponse
+    public function index(GetTasksRequest $request, DashboardFilterService $filterService): JsonResponse
     {
-        $validated = $request->validated();
+        $dto = DashboardFilterDTO::fromRequest($request);
+        $query = ClickUpTaskCache::query();
+        $filterService->applyFilters($query, $dto);
 
-        $query = ClickUpTaskCache::query()
-            ->when($validated['module'] ?? null, fn ($builder, $module) => $builder->where('tipe_aplikasi', strtoupper(trim($module))))
-            ->when($validated['aplikasi'] ?? null, fn ($builder, $aplikasi) => $builder->where('aplikasi', trim($aplikasi)))
-            ->when($validated['technician'] ?? null, fn ($builder, $tech) => $builder->where('technician', trim($tech)))
-            ->when($validated['status'] ?? null, fn ($builder, $st) => $builder->where('status', strtolower(trim($st))))
-            ->when($validated['search'] ?? null, fn ($builder, $search) => $builder->where(function ($q) use ($search) {
-                $term = '%' . trim($search) . '%';
+        if ($search = $request->query('search')) {
+            $term = '%' . trim((string) $search) . '%';
+            $query->where(function ($q) use ($term) {
                 $q->where('name', 'like', $term)
                   ->orWhere('tiket_id', 'like', $term)
                   ->orWhere('custom_id', 'like', $term);
-            }))
-            ->orderByDesc('updated_at');
+            });
+        }
 
-        $paginator = $query->paginate($validated['per_page'] ?? 15);
+        $paginator = $query->orderByDesc('updated_at')->paginate($dto->perPage);
 
         return response()->json([
             'success' => true,
+            'available_filters' => $filterService->getAvailableFilters(),
             'data' => $paginator,
         ]);
     }
