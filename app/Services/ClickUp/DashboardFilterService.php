@@ -49,8 +49,37 @@ class DashboardFilterService
             $query->where('technician', $tech);
         }
 
-        // 5. Date / Month Filter strictly based on actual ticket creation date (created_time)
-        if (! $dto->isAllTime() && $dto->year !== null && $dto->month !== null) {
+        // 5. Date Filter (Custom Range vs Month Presets)
+        if ($dto->hasCustomDateRange()) {
+            $startDate = $dto->startDate ? Carbon::parse($dto->startDate)->startOfDay() : null;
+            $endDate = $dto->endDate ? Carbon::parse($dto->endDate)->endOfDay() : null;
+
+            $query->where(function ($dateQ) use ($startDate, $endDate) {
+                $dateQ->where(function ($sub) use ($startDate, $endDate) {
+                    $sub->whereNotNull('created_time')
+                        ->where('created_time', '!=', '');
+                    if ($startDate) {
+                        $sub->where('created_time', '>=', $startDate->toDateTimeString());
+                    }
+                    if ($endDate) {
+                        $sub->where('created_time', '<=', $endDate->toDateTimeString());
+                    }
+                });
+
+                if ($startDate || $endDate) {
+                    $dateQ->orWhere(function ($sub) use ($startDate, $endDate) {
+                        $sub->whereNotNull('created_time')
+                            ->where('created_time', '!=', '');
+                        if ($startDate) {
+                            $sub->where('created_time', '>=', $startDate->format('Y-m-d'));
+                        }
+                        if ($endDate) {
+                            $sub->where('created_time', '<=', $endDate->format('Y-m-d') . ' 23:59:59');
+                        }
+                    });
+                }
+            });
+        } elseif (! $dto->isAllTime() && $dto->year !== null && $dto->month !== null) {
             $year = $dto->year;
             $month = $dto->month;
             $monthPad = sprintf('%02d', $month);

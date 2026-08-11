@@ -15,6 +15,8 @@ class DashboardFilterDTO
         public readonly string $period = 'current',
         public readonly ?int $year = null,
         public readonly ?int $month = null,
+        public readonly ?string $startDate = null,
+        public readonly ?string $endDate = null,
     ) {}
 
     /**
@@ -27,14 +29,27 @@ class DashboardFilterDTO
         $status = $request->query('status') ? trim((string) $request->query('status')) : null;
         $technician = $request->query('technician') ? trim((string) $request->query('technician')) : null;
 
+        $startDateRaw = $request->query('start_date') ?? $request->query('start');
+        $endDateRaw = $request->query('end_date') ?? $request->query('end');
+
+        $startDate = null;
+        $endDate = null;
+
+        if (filled($startDateRaw) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim((string) $startDateRaw))) {
+            $startDate = trim((string) $startDateRaw);
+        }
+        if (filled($endDateRaw) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim((string) $endDateRaw))) {
+            $endDate = trim((string) $endDateRaw);
+        }
+
         // Accept 'period' or 'month' parameter (e.g. '2026-08', 'current', or 'all')
-        $rawPeriod = $request->query('period') ?? $request->query('month') ?? 'current';
+        $rawPeriod = $request->query('period') ?? $request->query('month') ?? ($startDate || $endDate ? 'custom' : 'current');
         $periodStr = strtolower(trim((string) $rawPeriod));
 
         $year = null;
         $month = null;
 
-        if ($periodStr !== 'all' && $periodStr !== '') {
+        if ($periodStr !== 'all' && $periodStr !== 'custom' && $periodStr !== '') {
             if ($periodStr === 'current') {
                 $now = Carbon::now();
                 $year = $now->year;
@@ -58,6 +73,8 @@ class DashboardFilterDTO
                     $periodStr = $now->format('Y-m');
                 }
             }
+        } elseif ($startDate || $endDate) {
+            $periodStr = 'custom';
         } else {
             $periodStr = 'all';
         }
@@ -70,12 +87,19 @@ class DashboardFilterDTO
             period: $periodStr,
             year: $year,
             month: $month,
+            startDate: $startDate,
+            endDate: $endDate,
         );
+    }
+
+    public function hasCustomDateRange(): bool
+    {
+        return filled($this->startDate) || filled($this->endDate);
     }
 
     public function isAllTime(): bool
     {
-        return $this->period === 'all' || ($this->year === null && $this->month === null);
+        return ! $this->hasCustomDateRange() && ($this->period === 'all' || ($this->year === null && $this->month === null));
     }
 
     public function toCacheKey(): string
@@ -88,6 +112,8 @@ class DashboardFilterDTO
             'period' => $this->period,
             'year' => $this->year,
             'month' => $this->month,
+            'start_date' => $this->startDate,
+            'end_date' => $this->endDate,
         ]));
     }
 
@@ -101,6 +127,8 @@ class DashboardFilterDTO
             'period' => $this->period,
             'year' => $this->year,
             'month' => $this->month,
+            'start_date' => $this->startDate,
+            'end_date' => $this->endDate,
         ];
     }
 }

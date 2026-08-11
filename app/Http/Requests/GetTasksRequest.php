@@ -21,6 +21,8 @@ class GetTasksRequest extends FormRequest
             'period' => ['nullable', 'string', 'max:20'],
             'month' => ['nullable', 'string', 'max:20'],
             'year' => ['nullable', 'integer'],
+            'start_date' => ['nullable', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'date_format:Y-m-d'],
             'search' => ['nullable', 'string', 'max:200'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ];
