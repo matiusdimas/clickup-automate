@@ -41,4 +41,24 @@ class ImportNormalizerAppMappingTest extends TestCase
         $this->assertEquals('hendrik.louis@lmd.co.id', $normalized['technician']);
         $this->assertEquals('Aug 06, 2026 01:56 PM', $normalized['response_date']);
     }
+
+    public function test_normalizer_maps_technician_with_domain_variations(): void
+    {
+        $techMappings = [
+            (object) ['original_name' => 'hendrik.louis@lintasmediadanawa.com', 'mapped_name' => 'LMD - Louis'],
+            (object) ['original_name' => 'yana.nurrohman@lintasmediadanawa.com', 'mapped_name' => 'LMD - Yana'],
+        ];
+
+        $excelRow1 = ['created_by' => 'hendrik.louis@lmd.co.id'];
+        $excelRow2 = ['created_by' => 'hendrik.louis'];
+        $excelRow3 = ['created_by' => 'yana.nurrohman@lintasmediadanawa.com'];
+
+        $res1 = $this->normalizer->normalizeImportRow($excelRow1, [], $techMappings);
+        $res2 = $this->normalizer->normalizeImportRow($excelRow2, [], $techMappings);
+        $res3 = $this->normalizer->normalizeImportRow($excelRow3, [], $techMappings);
+
+        $this->assertEquals('LMD - Louis', $res1['technician']);
+        $this->assertEquals('LMD - Louis', $res2['technician']);
+        $this->assertEquals('LMD - Yana', $res3['technician']);
+    }
 }

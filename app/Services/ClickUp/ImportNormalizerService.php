@@ -137,12 +137,18 @@ class ImportNormalizerService
             $rawUser = str_contains($rawTech, '@') ? explode('@', $rawTech)[0] : $rawTech;
 
             $mapping = collect($techMappings)->first(function ($m) use ($rawTech, $rawUser) {
-                $orig = strtolower(trim((string) $m->original_name));
-                return $orig === $rawTech || $orig === $rawUser;
+                $origName = is_object($m) ? ($m->original_name ?? '') : ($m['original_name'] ?? '');
+                $orig = strtolower(trim((string) $origName));
+                $origUser = str_contains($orig, '@') ? explode('@', $orig)[0] : $orig;
+
+                return $orig === $rawTech
+                    || $orig === $rawUser
+                    || $origUser === $rawTech
+                    || $origUser === $rawUser;
             });
 
             if ($mapping) {
-                $technician = $mapping->mapped_name;
+                $technician = is_object($mapping) ? ($mapping->mapped_name ?? $technician) : ($mapping['mapped_name'] ?? $technician);
             }
         }
 
