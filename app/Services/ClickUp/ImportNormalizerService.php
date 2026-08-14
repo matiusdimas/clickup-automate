@@ -57,15 +57,11 @@ class ImportNormalizerService
         ])->first(fn ($value) => filled($value), '');
 
         if (filled($rules)) {
+            $evaluator = new Routing\RuleEvaluatorService();
             foreach ($rules as $rule) {
-                $ruleField = Str::of((string) $rule->excel_field)->lower()->replace(['-', '_'], ' ')->squish()->toString();
-                $rowVal = data_get($normalized, $ruleField);
-
-                if (filled($rowVal)) {
-                    if (strtolower(trim((string) $rowVal)) === strtolower(trim((string) $rule->excel_value))) {
-                        $aplikasi = $rule->target_module;
-                        // Do not break here, allow newer rules to overwrite older ones for exception cases
-                    }
+                if ($evaluator->matchesRule($rule, $normalized)) {
+                    $aplikasi = is_array($rule) ? ($rule['target_module'] ?? $aplikasi) : ($rule->target_module ?? $aplikasi);
+                    // Do not break here, allow newer rules to overwrite older ones for exception cases
                 }
             }
         }
@@ -394,23 +390,7 @@ class ImportNormalizerService
 
     public function mapAppCategory(string $appName): ?string
     {
-        $map = [
-            'cafeins' => 'bbe04f86-d669-4216-9d74-50b06d57c920',
-            'sales mastes' => '66596674-9673-4b1a-be26-6192038774dc',
-            'cmms' => 'ed3788b1-277c-4c32-b130-9379356ee3e0',
-            'myla' => 'f80b800d-54aa-4389-b2fb-cdf4c623f72a',
-            'psa pca' => 'd053f47c-d816-4caf-b91c-88372f9d3b27',
-            'pmois' => 'cfb962e5-71f3-4609-9b56-c8b784ccb325',
-            'doc tracking' => '655932d5-1747-442e-9619-e74f44592cc2',
-            'starla' => 'b015af83-26e5-48eb-bedc-d326c9145ab8',
-            'ebesha' => '730a53d7-3658-4fd6-aa4e-89fa91bf3a1b',
-            'ultima & starlink' => 'acc57591-7221-4118-8e03-d366d9a76be4',
-            'gntu' => '099e4653-4973-4da1-8cb4-ec709af6f812',
-            'jarin' => 'd225ea0a-7258-4d94-b952-6dc73b33dc01',
-        ];
-
-        $lower = strtolower(trim($appName));
-        return $map[$lower] ?? null;
+        return ClickUpAppRegistry::mapAppCategory($appName);
     }
 
     private function formatDateString(?string $dateString): string

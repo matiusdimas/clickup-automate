@@ -252,7 +252,7 @@ class ClickUpImportService
                     }
 
                     if (filled($payload['aplikasi']) && $appId && $this->isFieldDifferent($payload['aplikasi'], $localTask->aplikasi)) {
-                        $customFieldValues['aec0cf66-4c70-41e1-9b61-311d4d1a8eb5'] = $appId;
+                        $customFieldValues[ClickUpAppRegistry::FIELD_ID] = $appId;
                     }
 
                     $totalChanges = ($hasMainTaskDiff ? 1 : 0) + count($customFieldValues);
@@ -394,9 +394,16 @@ class ClickUpImportService
 
                 if (filled($payload['aplikasi']) && $appId) {
                     $taskPayload['custom_fields'][] = [
-                        'id' => 'aec0cf66-4c70-41e1-9b61-311d4d1a8eb5',
+                        'id' => ClickUpAppRegistry::FIELD_ID,
                         'value' => $appId,
                     ];
+                }
+
+                // Resolve dynamic ClickUp Assignees (Dzaka, Mukhlis, Support, etc.)
+                $assigneeEvaluator = new Routing\AssigneeEvaluatorService();
+                $assigneeIds = $assigneeEvaluator->resolveAssignees($payload['aplikasi'] ?? '', $row);
+                if (!empty($assigneeIds)) {
+                    $taskPayload['assignees'] = $assigneeIds;
                 }
 
                 $response = $this->apiClient->requestWithRetry(fn () => $this->apiClient->client()->post("/list/{$module->clickup_list_id}/task", $taskPayload));

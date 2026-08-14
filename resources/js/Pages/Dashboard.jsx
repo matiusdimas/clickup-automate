@@ -43,6 +43,59 @@ const initialRuleForm = {
     excel_value: '',
     target_module: '',
     source_format: 'ebesha',
+    operator: 'AND',
+    conditions: [
+        { field: '', operator: 'equals', value: '' }
+    ],
+};
+
+const defaultAssignees = [
+    { id: 113406558, name: 'Muhammad Dzaka Murran', email: 'dzaka@lmd.co.id', initials: 'MM', role: 'Main Apps Specialist' },
+    { id: 95657721, name: 'Mukhlis Ibrahim', email: 'mukhlis@lmd.co.id', initials: 'MI', role: 'Infrastructure Specialist' },
+    { id: 95553944, name: 'Support LMD', email: 'support@lmd.co.id', initials: 'SL', role: 'Support Lead' },
+    { id: 95657720, name: 'Ilyas Awaludin', email: 'ilyas@lmd.co.id', initials: 'IA', role: 'Support Member' },
+    { id: 282628817, name: 'Jordi Alexander', email: 'jordi@lmd.co.id', initials: 'JA', role: 'Administrator' },
+    { id: 282624016, name: 'Erick Wijaya', email: 'erick.wijaya@lintasmediadanawa.com', initials: 'EW', role: 'Owner' },
+];
+
+const initialAssigneeForm = {
+    rule_name: '',
+    app_category: 'MAIN',
+    target_app: '',
+    assignee_ids: [113406558, 95553944],
+};
+
+const matchesSingleCondition = (condition, normalized) => {
+    const fieldKey = normalizeHeader(condition.field || '');
+    if (!fieldKey) return false;
+    const actual = String(normalized[fieldKey] ?? '').trim().toLowerCase();
+    const expected = String(condition.value ?? '').trim().toLowerCase();
+    const op = String(condition.operator ?? 'equals').toLowerCase();
+
+    switch (op) {
+        case 'equals': case 'eq': case 'is': return actual === expected;
+        case 'contains': case 'like': return actual.includes(expected);
+        case 'not_equals': case 'neq': return actual !== expected;
+        case 'starts_with': return actual.startsWith(expected);
+        case 'ends_with': return actual.endsWith(expected);
+        case 'is_not_empty': return actual !== '';
+        case 'is_empty': return actual === '';
+        default: return actual === expected;
+    }
+};
+
+const matchesRule = (rule, normalized) => {
+    const conditions = Array.isArray(rule.conditions) && rule.conditions.length > 0
+        ? rule.conditions
+        : (rule.excel_field ? [{ field: rule.excel_field, operator: 'equals', value: rule.excel_value }] : []);
+
+    if (conditions.length === 0) return false;
+    const operator = String(rule.operator || 'AND').toUpperCase();
+
+    if (operator === 'OR') {
+        return conditions.some((c) => matchesSingleCondition(c, normalized));
+    }
+    return conditions.every((c) => matchesSingleCondition(c, normalized));
 };
 
 const formatDateTime = (value) => {
@@ -115,13 +168,9 @@ const normalizeRow = (row, rules = [], techMappings = []) => {
 
     // Apply dynamic routing rules: newer rules overwrite older ones
     for (const rule of rules) {
-        const ruleField = normalizeHeader(rule.excel_field);
-        const rowVal = normalized[ruleField];
-        if (rowVal !== undefined && rowVal !== null && rowVal !== '') {
-            if (String(rowVal).trim().toLowerCase() === String(rule.excel_value).trim().toLowerCase()) {
-                aplikasi = String(rule.target_module).trim().toUpperCase();
-                // Do not break here to allow newer rules to act as exceptions
-            }
+        if (matchesRule(rule, normalized)) {
+            aplikasi = String(rule.target_module).trim().toUpperCase();
+            // Do not break here to allow newer rules to act as exceptions
         }
     }
 
@@ -244,6 +293,13 @@ export default function Dashboard() {
     const [selectedTaskDetail, setSelectedTaskDetail] = useState(null);
     const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
     const [loadingTaskDetail, setLoadingTaskDetail] = useState(false);
+
+    const [assigneeRules, setAssigneeRules] = useState([]);
+    const [assigneesList, setAssigneesList] = useState(defaultAssignees);
+    const [assigneeForm, setAssigneeForm] = useState(initialAssigneeForm);
+    const [assigneeSaving, setAssigneeSaving] = useState(false);
+    const [editingAssigneeRuleId, setEditingAssigneeRuleId] = useState(null);
+    const [syncingAssignees, setSyncingAssignees] = useState(false);
 
     const openTaskModal = async (taskSummary) => {
         setSelectedTaskDetail(taskSummary);
@@ -386,10 +442,36 @@ export default function Dashboard() {
         }
     };
 
+    const loadAssigneeRules = async () => {
+        try {
+            const response = await apiFetch(`${apiBase}/assignee-rules`);
+            const payload = await response.json();
+            if (response.ok && payload.success) {
+                setAssigneeRules(payload.data ?? []);
+            }
+        } catch {
+            // Silently ignore errors
+        }
+    };
+
+    const loadAssigneesList = async () => {
+        try {
+            const response = await apiFetch(`${apiBase}/assignees`);
+            const payload = await response.json();
+            if (response.ok && payload.success && payload.data?.length > 0) {
+                setAssigneesList(payload.data);
+            }
+        } catch {
+            // Silently ignore errors
+        }
+    };
+
     useEffect(() => {
         loadOverview();
         loadRules();
         loadTechMappings();
+        loadAssigneeRules();
+        loadAssigneesList();
     }, []);
 
     const modules = overview?.modules ?? [];
@@ -428,8 +510,39 @@ export default function Dashboard() {
             'ultima & starlink': 'acc57591-7221-4118-8e03-d366d9a76be4',
             'gntu': '099e4653-4973-4da1-8cb4-ec709af6f812',
             'jarin': 'd225ea0a-7258-4d94-b952-6dc73b33dc01',
+            'infra - cpanel arint': 'fabafe63-82c0-409f-beb9-3522b282fd36',
+            'infra - cpanel kominfo': '86a245fb-7737-4d86-a8e9-22f480aec888',
+            'infra - cpanel hanken': 'f7abb889-6bec-43f3-aafc-092828765117',
+            'infra - cpanel kalteng': '8f629dc0-f198-461a-a2cb-0e08bd96f6a1',
+            'infra - cafeins la': '3361634b-6603-47fa-b80a-c1bd504a061e',
+            'infra - rcs la': '4700c5db-40d2-4569-9503-036716d1c3b7',
+            'infra - cpanel yakult': '4133b96d-2f6f-4d13-8e1a-12873707ff1e',
+            'infra - ad bpd ntb': '7c787c4b-1e9f-4a97-8a37-3f2755cee3c5',
+            'infra - ad ioh': '3435f015-37d9-4046-b9ba-41301a5fc006',
+            'infra - patch manager la': '1af009bb-4a41-4912-85d6-66b62db41bdb',
+            'infra - odoo jarin': '3cd2bda8-7da4-484e-b45e-540a14bd4b3f',
+            'infra - bank mestika': '71d081bd-b10c-41c1-825a-45508302c6fd',
+            'infra - myla/pmois la': 'c600a542-971c-4cf3-90c2-849c5191e54c',
+            'infra - psa/pca la': 'e4077819-7319-43d5-8613-03ec350bfcfe',
+            'infra - cmms la': '70901152-457f-4c77-9bdf-d55f1a48cbe3',
+            'infra - contact center': '8a0792fd-6279-40b1-80f0-ca07d0c9d933',
+            'infra - apl': '79f48032-b4ee-4a2e-8777-2121c06b01fa',
+            'infra - apl ': '79f48032-b4ee-4a2e-8777-2121c06b01fa',
+            'infra - owlexa la': 'a1158ebf-5abe-4ba4-840a-24a56edcbbba',
+            'infra - it corp la': '9904188a-fbd3-4dd0-8b79-6bbc259e0249',
+            'infra - cloudeka la': '3b4117dc-2753-45ea-a21b-d3f07534748e',
+            'infra - kargo oke': '09bfa7ba-996c-44e9-9017-d109df4fcdad',
+            'infra - primecare hospital': '0c17f133-8621-49b5-beaf-fbefe37a16c5',
+            'infra - ultima/starlink la': 'c419a4be-fe63-4c78-b388-0e805af4721e',
+            'infra - gntu': '5fccad63-21da-4a7c-b0a3-4e8cc1ef8a16',
         };
-        return map[String(appName || '').toLowerCase().trim()] || null;
+        const clean = String(appName || '').toLowerCase().trim();
+        if (map[clean]) return map[clean];
+        const sanitized = clean.replace(/[^a-z0-9]/g, '');
+        for (const [key, id] of Object.entries(map)) {
+            if (key.replace(/[^a-z0-9]/g, '') === sanitized) return id;
+        }
+        return null;
     };
 
     const cleanTiketId = (id) => String(id || '').trim().replace(/^#/, '').toLowerCase();
@@ -585,17 +698,170 @@ export default function Dashboard() {
         }
     };
 
-    const addRule = async (event) => {
+    const addConditionRow = () => {
+        setRuleForm((prev) => ({
+            ...prev,
+            conditions: [...(prev.conditions || []), { field: '', operator: 'equals', value: '' }],
+        }));
+    };
+
+    const toggleAssigneeFormUser = (userId) => {
+        setAssigneeForm((prev) => {
+            const current = prev.assignee_ids || [];
+            const exists = current.includes(userId);
+            const updated = exists ? current.filter((id) => id !== userId) : [...current, userId];
+            return { ...prev, assignee_ids: updated };
+        });
+    };
+
+    const startEditAssigneeRule = (rule) => {
+        setEditingAssigneeRuleId(rule.id || null);
+        setAssigneeForm({
+            rule_name: rule.rule_name || '',
+            app_category: rule.app_category || 'MAIN',
+            target_app: rule.target_app || '',
+            assignee_ids: rule.assignee_ids || [],
+        });
+        // Scroll smoothly to assignee form card
+        const formCard = document.getElementById('assignee-rule-form');
+        if (formCard) {
+            formCard.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
+
+    const cancelEditAssigneeRule = () => {
+        setEditingAssigneeRuleId(null);
+        setAssigneeForm(initialAssigneeForm);
+    };
+
+    const addAssigneeRule = async (event) => {
         event.preventDefault();
-        if (!ruleForm.excel_field || !ruleForm.excel_value || !ruleForm.target_module) {
+        if (!assigneeForm.assignee_ids || assigneeForm.assignee_ids.length === 0) {
+            setActionMessage('Pilih minimal 1 Assignee di ClickUp!');
             return;
         }
+
+        const selectedNames = assigneeForm.assignee_ids.map((id) => {
+            const u = assigneesList.find((x) => x.id == id);
+            return u ? u.name : `User #${id}`;
+        });
+
+        const payloadToSend = {
+            ...assigneeForm,
+            assignee_names: selectedNames,
+        };
+
+        setAssigneeSaving(true);
+        try {
+            const isEditing = editingAssigneeRuleId !== null;
+            const url = isEditing
+                ? `${apiBase}/assignee-rules/${editingAssigneeRuleId}`
+                : `${apiBase}/assignee-rules`;
+            const method = isEditing ? 'PUT' : 'POST';
+
+            const response = await apiFetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payloadToSend),
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Gagal menyimpan aturan assignee.');
+            }
+            setEditingAssigneeRuleId(null);
+            setAssigneeForm(initialAssigneeForm);
+            await loadAssigneeRules();
+            setActionMessage(isEditing ? 'Aturan penugasan assignee berhasil diperbarui.' : 'Aturan penugasan assignee berhasil disimpan.');
+        } catch (error) {
+            setActionMessage(error.message);
+        } finally {
+            setAssigneeSaving(false);
+        }
+    };
+
+    const deleteAssigneeRule = async (ruleId) => {
+        if (!window.confirm('Hapus aturan penugasan ini?')) return;
+        try {
+            const response = await apiFetch(`${apiBase}/assignee-rules/${ruleId}`, { method: 'DELETE' });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Gagal menghapus aturan.');
+            }
+            if (editingAssigneeRuleId === ruleId) {
+                cancelEditAssigneeRule();
+            }
+            await loadAssigneeRules();
+        } catch (error) {
+            setActionMessage(error.message);
+        }
+    };
+
+    const triggerAssigneeSync = async () => {
+        setSyncingAssignees(true);
+        setActionMessage('Memulai push assignees ke ClickUp REST API...');
+        try {
+            const response = await apiFetch(`${apiBase}/sync-assignees`, { method: 'POST' });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Gagal melakukan push assignees ke ClickUp.');
+            }
+            setActionMessage(payload.message || 'Sinkronisasi assignees ke ClickUp selesai.');
+            await loadOverview();
+        } catch (error) {
+            setActionMessage(error.message);
+        } finally {
+            setSyncingAssignees(false);
+        }
+    };
+
+    const removeConditionRow = (index) => {
+        setRuleForm((prev) => {
+            const updated = [...(prev.conditions || [])];
+            updated.splice(index, 1);
+            return {
+                ...prev,
+                conditions: updated.length > 0 ? updated : [{ field: '', operator: 'equals', value: '' }],
+            };
+        });
+    };
+
+    const updateConditionRow = (index, key, value) => {
+        setRuleForm((prev) => {
+            const updated = [...(prev.conditions || [])];
+            updated[index] = { ...updated[index], [key]: value };
+            return { ...prev, conditions: updated };
+        });
+    };
+
+    const addRule = async (event) => {
+        event.preventDefault();
+        const validConditions = (ruleForm.conditions || []).filter((c) => c.field && c.field.trim() !== '');
+        
+        if (validConditions.length === 0 && (!ruleForm.excel_field || !ruleForm.excel_field.trim())) {
+            setActionMessage('Minimal isi 1 syarat kondisi kolom!');
+            return;
+        }
+
+        if (!ruleForm.target_module) {
+            setActionMessage('Pilih Target Apps terlebih dahulu!');
+            return;
+        }
+
+        const payloadToSend = {
+            ...ruleForm,
+            excel_field: validConditions.length > 0 ? validConditions[0].field : ruleForm.excel_field,
+            excel_value: validConditions.length > 0 ? validConditions[0].value : ruleForm.excel_value,
+            conditions: validConditions.length > 0 ? validConditions : [
+                { field: ruleForm.excel_field, operator: 'equals', value: ruleForm.excel_value }
+            ],
+        };
+
         setRuleSaving(true);
         try {
             const response = await apiFetch(`${apiBase}/rules`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(ruleForm),
+                body: JSON.stringify(payloadToSend),
             });
             const payload = await response.json();
             if (!response.ok || !payload.success) {
@@ -1273,87 +1539,196 @@ export default function Dashboard() {
                                     Buat aturan: jika kolom <span className="text-violet-300 font-medium">[Field]</span> berisi nilai <span className="text-violet-300 font-medium">[Value]</span>, maka baris tersebut diarahkan ke module <span className="text-violet-300 font-medium">[Module]</span>. Upload Excel dahulu agar kolom terdeteksi otomatis.
                                 </p>
 
-                                {/* Add Rule Form */}
-                                <form onSubmit={addRule} className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400">Sumber (SDP/Ebesha)</label>
-                                        <select
-                                            value={ruleForm.source_format}
-                                            onChange={(e) => setRuleForm((prev) => ({ ...prev, source_format: e.target.value }))}
-                                            className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-white outline-none focus:border-violet-400"
-                                            required
-                                        >
-                                            <option value="ebesha">Ebesha</option>
-                                            <option value="sdp">SDP</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400">Field (kolom Excel)</label>
-                                        {detectedHeaders.length > 0 ? (
+                                {/* Add Advanced Rule Form */}
+                                <form onSubmit={addRule} className="mt-5 space-y-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-slate-300">Sumber (SDP/Ebesha)</label>
                                             <select
-                                                value={ruleForm.excel_field}
-                                                onChange={(e) => setRuleForm((prev) => ({ ...prev, excel_field: e.target.value }))}
-                                                className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-white outline-none focus:border-violet-400"
+                                                value={ruleForm.source_format}
+                                                onChange={(e) => setRuleForm((prev) => ({ ...prev, source_format: e.target.value }))}
+                                                className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-2.5 text-sm text-white outline-none focus:border-violet-400"
                                                 required
                                             >
-                                                <option value="">-- Pilih kolom --</option>
-                                                {detectedHeaders.map((h) => (
-                                                    <option key={h} value={h}>{h}</option>
-                                                ))}
+                                                <option value="ebesha">Ebesha</option>
+                                                <option value="sdp">SDP</option>
                                             </select>
-                                        ) : (
-                                            <input
-                                                value={ruleForm.excel_field}
-                                                onChange={(e) => setRuleForm((prev) => ({ ...prev, excel_field: e.target.value }))}
-                                                className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-white outline-none placeholder:text-slate-500 focus:border-violet-400"
-                                                placeholder="misal: Account"
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-slate-300">Logika Perkondisian</label>
+                                            <div className="flex rounded-2xl border border-white/10 bg-slate-900/90 p-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRuleForm((prev) => ({ ...prev, operator: 'AND' }))}
+                                                    className={`flex-1 rounded-xl py-1.5 text-xs font-semibold transition ${
+                                                        ruleForm.operator === 'AND'
+                                                            ? 'bg-violet-500 text-white shadow'
+                                                            : 'text-slate-400 hover:text-white'
+                                                    }`}
+                                                >
+                                                    AND (Semua Syarat)
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRuleForm((prev) => ({ ...prev, operator: 'OR' }))}
+                                                    className={`flex-1 rounded-xl py-1.5 text-xs font-semibold transition ${
+                                                        ruleForm.operator === 'OR'
+                                                            ? 'bg-amber-500 text-white shadow'
+                                                            : 'text-slate-400 hover:text-white'
+                                                    }`}
+                                                >
+                                                    OR (Salah Satu)
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-slate-300">Target Apps</label>
+                                            <select
+                                                value={ruleForm.target_module}
+                                                onChange={(e) => setRuleForm((prev) => ({ ...prev, target_module: e.target.value }))}
+                                                className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-2.5 text-sm text-white outline-none focus:border-violet-400"
                                                 required
-                                            />
-                                        )}
+                                            >
+                                                <option value="">-- Pilih Target Apps --</option>
+                                                <option value="SKIP">❌ JANGAN MASUKKAN (SKIP)</option>
+                                                <optgroup label="Main Apps">
+                                                    <option value="Cafeins">Cafeins</option>
+                                                    <option value="Sales Mastes">Sales Mastes</option>
+                                                    <option value="CMMS">CMMS</option>
+                                                    <option value="MyLA">MyLA</option>
+                                                    <option value="PSA PCA">PSA PCA</option>
+                                                    <option value="PMOIS">PMOIS</option>
+                                                    <option value="Doc Tracking">Doc Tracking</option>
+                                                    <option value="Starla">Starla</option>
+                                                    <option value="eBesha">eBesha</option>
+                                                    <option value="Ultima & Starlink">Ultima & Starlink</option>
+                                                    <option value="GNTU">GNTU</option>
+                                                    <option value="Jarin">Jarin</option>
+                                                </optgroup>
+                                                <optgroup label="Infrastructure Apps">
+                                                    <option value="Infra - cPanel Arint">Infra - cPanel Arint</option>
+                                                    <option value="Infra - cPanel Kominfo">Infra - cPanel Kominfo</option>
+                                                    <option value="Infra - cPanel Hanken">Infra - cPanel Hanken</option>
+                                                    <option value="Infra - cPanel Kalteng">Infra - cPanel Kalteng</option>
+                                                    <option value="Infra - Cafeins LA">Infra - Cafeins LA</option>
+                                                    <option value="Infra - RCS LA">Infra - RCS LA</option>
+                                                    <option value="Infra - cPanel Yakult">Infra - cPanel Yakult</option>
+                                                    <option value="Infra - AD BPD NTB">Infra - AD BPD NTB</option>
+                                                    <option value="Infra - AD IOH">Infra - AD IOH</option>
+                                                    <option value="Infra - Patch Manager LA">Infra - Patch Manager LA</option>
+                                                    <option value="Infra - Odoo Jarin">Infra - Odoo Jarin</option>
+                                                    <option value="Infra - Bank Mestika">Infra - Bank Mestika</option>
+                                                    <option value="Infra - MyLA/PMOIS LA">Infra - MyLA/PMOIS LA</option>
+                                                    <option value="Infra - PSA/PCA LA">Infra - PSA/PCA LA</option>
+                                                    <option value="Infra - CMMS LA">Infra - CMMS LA</option>
+                                                    <option value="Infra - Contact Center">Infra - Contact Center</option>
+                                                    <option value="Infra - APL">Infra - APL</option>
+                                                    <option value="Infra - Owlexa LA">Infra - Owlexa LA</option>
+                                                    <option value="Infra - IT Corp LA">Infra - IT Corp LA</option>
+                                                    <option value="Infra - Cloudeka LA">Infra - Cloudeka LA</option>
+                                                    <option value="Infra - Kargo Oke">Infra - Kargo Oke</option>
+                                                    <option value="Infra - Primecare Hospital">Infra - Primecare Hospital</option>
+                                                    <option value="Infra - Ultima/Starlink LA">Infra - Ultima/Starlink LA</option>
+                                                    <option value="Infra - GNTU">Infra - GNTU</option>
+                                                </optgroup>
+                                            </select>
+                                        </div>
                                     </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400">Value</label>
-                                        <input
-                                            value={ruleForm.excel_value}
-                                            onChange={(e) => setRuleForm((prev) => ({ ...prev, excel_value: e.target.value }))}
-                                            className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-white outline-none placeholder:text-slate-500 focus:border-violet-400"
-                                            placeholder="misal: Royal safari garden"
-                                            required
-                                        />
+
+                                    {/* Conditions Builder */}
+                                    <div className="space-y-2 pt-2 border-t border-white/5">
+                                        <label className="text-xs font-semibold tracking-wider text-violet-300 uppercase">
+                                            Syarat Kondisi Field ({ruleForm.conditions?.length || 0})
+                                        </label>
+
+                                        {(ruleForm.conditions || []).map((cond, idx) => (
+                                            <div key={idx} className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-900/60 p-2 border border-white/5 sm:flex-nowrap">
+                                                <span className="text-xs text-slate-500 font-mono w-6 text-center">#{idx + 1}</span>
+
+                                                {/* Field Input / Dropdown */}
+                                                <div className="flex-1 min-w-[140px]">
+                                                    {detectedHeaders.length > 0 ? (
+                                                        <select
+                                                            value={cond.field}
+                                                            onChange={(e) => updateConditionRow(idx, 'field', e.target.value)}
+                                                            className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-violet-400"
+                                                            required
+                                                        >
+                                                            <option value="">-- Pilih Kolom --</option>
+                                                            {detectedHeaders.map((h) => (
+                                                                <option key={h} value={h}>{h}</option>
+                                                            ))}
+                                                        </select>
+                                                    ) : (
+                                                        <input
+                                                            value={cond.field}
+                                                            onChange={(e) => updateConditionRow(idx, 'field', e.target.value)}
+                                                            className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white placeholder:text-slate-500 outline-none focus:border-violet-400"
+                                                            placeholder="misal: Account"
+                                                            required
+                                                        />
+                                                    )}
+                                                </div>
+
+                                                {/* Operator Select */}
+                                                <div className="w-[140px]">
+                                                    <select
+                                                        value={cond.operator || 'equals'}
+                                                        onChange={(e) => updateConditionRow(idx, 'operator', e.target.value)}
+                                                        className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-violet-200 outline-none focus:border-violet-400"
+                                                    >
+                                                        <option value="equals">= Sama Dengan</option>
+                                                        <option value="contains">🔍 Mengandung</option>
+                                                        <option value="not_equals">!= Tidak Sama</option>
+                                                        <option value="starts_with">▶️ Diawali</option>
+                                                        <option value="ends_with">◀️ Diakhiri</option>
+                                                        <option value="is_not_empty">✨ Terisi (Ada)</option>
+                                                    </select>
+                                                </div>
+
+                                                {/* Value Input */}
+                                                <div className="flex-1 min-w-[140px]">
+                                                    <input
+                                                        value={cond.value || ''}
+                                                        onChange={(e) => updateConditionRow(idx, 'value', e.target.value)}
+                                                        className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white placeholder:text-slate-500 outline-none focus:border-violet-400"
+                                                        placeholder="Nilai yang dicari..."
+                                                        disabled={cond.operator === 'is_not_empty' || cond.operator === 'is_empty'}
+                                                    />
+                                                </div>
+
+                                                {/* Remove Condition Button */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeConditionRow(idx)}
+                                                    className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-2 text-rose-300 transition hover:bg-rose-500/20"
+                                                    title="Hapus Syarat Ini"
+                                                >
+                                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ))}
                                     </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400">Target Apps</label>
-                                        <select
-                                            value={ruleForm.target_module}
-                                            onChange={(e) => setRuleForm((prev) => ({ ...prev, target_module: e.target.value }))}
-                                            className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-white outline-none focus:border-violet-400"
-                                            required
+
+                                    <div className="flex items-center justify-between gap-4 pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={addConditionRow}
+                                            className="rounded-2xl border border-violet-400/30 bg-violet-400/10 px-4 py-2 text-xs font-semibold text-violet-200 transition hover:bg-violet-400/20"
                                         >
-                                            <option value="">-- Pilih Target Apps --</option>
-                                            <option value="SKIP">❌ JANGAN MASUKKAN (SKIP)</option>
-                                            <optgroup label="Apps List">
-                                                <option value="Cafeins">Cafeins</option>
-                                                <option value="Sales Mastes">Sales Mastes</option>
-                                                <option value="CMMS">CMMS</option>
-                                                <option value="MyLA">MyLA</option>
-                                                <option value="PSA PCA">PSA PCA</option>
-                                                <option value="PMOIS">PMOIS</option>
-                                                <option value="Doc Tracking">Doc Tracking</option>
-                                                <option value="Starla">Starla</option>
-                                                <option value="eBesha">eBesha</option>
-                                                <option value="Ultima & Starlink">Ultima & Starlink</option>
-                                                <option value="GNTU">GNTU</option>
-                                                <option value="Jarin">Jarin</option>
-                                            </optgroup>
-                                        </select>
-                                    </div>
-                                    <div className="flex items-end">
+                                            + Tambah Syarat Kondisi
+                                        </button>
+
                                         <button
                                             type="submit"
                                             disabled={ruleSaving}
-                                            className="w-full rounded-2xl bg-violet-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                            className="rounded-2xl bg-violet-500 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-60"
                                         >
-                                            {ruleSaving ? 'Menyimpan...' : '+ Tambah'}
+                                            {ruleSaving ? 'Menyimpan...' : '+ Simpan Aturan Routing'}
                                         </button>
                                     </div>
                                 </form>
@@ -1365,38 +1740,61 @@ export default function Dashboard() {
                                             <thead className="bg-slate-950/80 text-slate-400">
                                                 <tr>
                                                     <th className="px-4 py-3 text-left font-medium">Sumber</th>
-                                                    <th className="px-4 py-3 text-left font-medium">Field</th>
-                                                    <th className="px-4 py-3 text-left font-medium">Value</th>
+                                                    <th className="px-4 py-3 text-left font-medium">Logika</th>
+                                                    <th className="px-4 py-3 text-left font-medium">Syarat Perkondisian</th>
                                                     <th className="px-4 py-3 text-left font-medium">→ Apps</th>
                                                     <th className="px-4 py-3 text-left font-medium"></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-white/10 bg-slate-950/50">
-                                                {rules.map((rule) => (
-                                                    <tr key={rule.id} className="hover:bg-white/5">
-                                                        <td className="px-4 py-3">
-                                                            <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
-                                                                {rule.source_format}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-violet-200 font-medium">{rule.excel_field}</td>
-                                                        <td className="px-4 py-3 text-slate-200">{rule.excel_value}</td>
-                                                        <td className="px-4 py-3">
-                                                            <span className="rounded-full bg-violet-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-violet-200">
-                                                                {rule.target_module}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => deleteRule(rule.id)}
-                                                                className="rounded-full border border-rose-400/30 bg-rose-400/10 px-3 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-400/20"
-                                                            >
-                                                                Hapus
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
+                                                {rules.map((rule) => {
+                                                    const ruleConditions = Array.isArray(rule.conditions) && rule.conditions.length > 0
+                                                        ? rule.conditions
+                                                        : [{ field: rule.excel_field, operator: 'equals', value: rule.excel_value }];
+                                                    const op = String(rule.operator || 'AND').toUpperCase();
+
+                                                    return (
+                                                        <tr key={rule.id} className="hover:bg-white/5">
+                                                            <td className="px-4 py-3">
+                                                                <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
+                                                                    {rule.source_format}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider ${
+                                                                    op === 'OR' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                                                                }`}>
+                                                                    {op}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <div className="space-y-1">
+                                                                    {ruleConditions.map((c, i) => (
+                                                                        <div key={i} className="flex items-center gap-1.5 text-xs">
+                                                                            <span className="font-semibold text-violet-200">{c.field}</span>
+                                                                            <span className="text-slate-400 font-mono text-[11px]">{c.operator || '='}</span>
+                                                                            <span className="rounded-lg bg-slate-900 px-2 py-0.5 font-medium text-slate-200 border border-white/5">{c.value || '""'}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <span className="rounded-full bg-violet-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-violet-200">
+                                                                    {rule.target_module}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => deleteRule(rule.id)}
+                                                                    className="rounded-full border border-rose-400/30 bg-rose-400/10 px-3 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-400/20"
+                                                                >
+                                                                    Hapus
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>
@@ -1421,6 +1819,286 @@ export default function Dashboard() {
                                         ))}
                                     </div>
                                 )}
+                            </div>
+
+                            {/* === CLICKUP ASSIGNEE RULES CARD === */}
+                            <div id="assignee-rule-form" className="rounded-3xl border border-sky-400/20 bg-sky-500/5 p-6 shadow-xl shadow-black/20 backdrop-blur-xl">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <p className="text-xs uppercase tracking-[0.28em] text-sky-300">
+                                            ClickUp Auto-Assignee Rules
+                                        </p>
+                                        <h3 className="mt-1 text-xl font-semibold text-white">
+                                            {editingAssigneeRuleId ? '✏️ Edit Aturan Penugasan Tiket' : 'Aturan Penugasan Tiket (Assignees)'}
+                                        </h3>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={triggerAssigneeSync}
+                                            disabled={syncingAssignees}
+                                            className="flex items-center gap-1.5 rounded-xl border border-sky-400/40 bg-sky-500/20 px-3 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/30 disabled:opacity-50"
+                                        >
+                                            <span>⚡</span>
+                                            <span>{syncingAssignees ? 'Memproses Push...' : 'Push Assignees ke ClickUp'}</span>
+                                        </button>
+
+                                        {editingAssigneeRuleId && (
+                                            <button
+                                                type="button"
+                                                onClick={cancelEditAssigneeRule}
+                                                className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-400/20"
+                                            >
+                                                ✕ Batal Edit
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                <p className="mt-2 text-sm leading-6 text-slate-300">
+                                    Atur tim/teknisi ClickUp yang otomatis di-assign saat tiket baru masuk. Bebas mengatur untuk <span className="text-sky-300 font-medium">Main Apps</span>, <span className="text-sky-300 font-medium">Infrastructure Apps</span>, atau <span className="text-sky-300 font-medium">Spesifik Apps</span>.
+                                </p>
+
+                                <form onSubmit={addAssigneeRule} className="mt-5 space-y-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-slate-300">Target Kategori Apps</label>
+                                            <select
+                                                value={assigneeForm.app_category}
+                                                onChange={(e) => setAssigneeForm((prev) => ({ ...prev, app_category: e.target.value }))}
+                                                className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-2.5 text-sm text-white outline-none focus:border-sky-400"
+                                                required
+                                            >
+                                                <option value="MAIN">⚡ Main Apps (Semua Main Apps)</option>
+                                                <option value="INFRA">🖥️ Infrastructure Apps (Semua Infra Apps)</option>
+                                                <option value="SPECIFIC">🎯 Spesifik App Terentu</option>
+                                                <option value="ALL">🌐 Semua Tiket (Default Global)</option>
+                                            </select>
+                                        </div>
+
+                                        {assigneeForm.app_category === 'SPECIFIC' && (
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-medium text-slate-300">Pilih Target App</label>
+                                                <select
+                                                    value={assigneeForm.target_app}
+                                                    onChange={(e) => setAssigneeForm((prev) => ({ ...prev, target_app: e.target.value }))}
+                                                    className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-2.5 text-sm text-white outline-none focus:border-sky-400"
+                                                    required
+                                                >
+                                                    <option value="">-- Pilih Apps --</option>
+                                                    <optgroup label="Main Apps">
+                                                        <option value="Cafeins">Cafeins</option>
+                                                        <option value="Sales Mastes">Sales Mastes</option>
+                                                        <option value="CMMS">CMMS</option>
+                                                        <option value="MyLA">MyLA</option>
+                                                        <option value="PSA PCA">PSA PCA</option>
+                                                        <option value="PMOIS">PMOIS</option>
+                                                        <option value="Doc Tracking">Doc Tracking</option>
+                                                        <option value="Starla">Starla</option>
+                                                        <option value="eBesha">eBesha</option>
+                                                        <option value="Ultima & Starlink">Ultima & Starlink</option>
+                                                        <option value="GNTU">GNTU</option>
+                                                        <option value="Jarin">Jarin</option>
+                                                    </optgroup>
+                                                    <optgroup label="Infrastructure Apps">
+                                                        <option value="Infra - cPanel Arint">Infra - cPanel Arint</option>
+                                                        <option value="Infra - cPanel Kominfo">Infra - cPanel Kominfo</option>
+                                                        <option value="Infra - cPanel Hanken">Infra - cPanel Hanken</option>
+                                                        <option value="Infra - cPanel Kalteng">Infra - cPanel Kalteng</option>
+                                                        <option value="Infra - Cafeins LA">Infra - Cafeins LA</option>
+                                                        <option value="Infra - RCS LA">Infra - RCS LA</option>
+                                                        <option value="Infra - cPanel Yakult">Infra - cPanel Yakult</option>
+                                                        <option value="Infra - AD BPD NTB">Infra - AD BPD NTB</option>
+                                                        <option value="Infra - AD IOH">Infra - AD IOH</option>
+                                                        <option value="Infra - Patch Manager LA">Infra - Patch Manager LA</option>
+                                                        <option value="Infra - Odoo Jarin">Infra - Odoo Jarin</option>
+                                                        <option value="Infra - Bank Mestika">Infra - Bank Mestika</option>
+                                                        <option value="Infra - MyLA/PMOIS LA">Infra - MyLA/PMOIS LA</option>
+                                                        <option value="Infra - PSA/PCA LA">Infra - PSA/PCA LA</option>
+                                                        <option value="Infra - CMMS LA">Infra - CMMS LA</option>
+                                                        <option value="Infra - Contact Center">Infra - Contact Center</option>
+                                                        <option value="Infra - APL">Infra - APL</option>
+                                                        <option value="Infra - Owlexa LA">Infra - Owlexa LA</option>
+                                                        <option value="Infra - IT Corp LA">Infra - IT Corp LA</option>
+                                                        <option value="Infra - Cloudeka LA">Infra - Cloudeka LA</option>
+                                                        <option value="Infra - Kargo Oke">Infra - Kargo Oke</option>
+                                                        <option value="Infra - Primecare Hospital">Infra - Primecare Hospital</option>
+                                                        <option value="Infra - Ultima/Starlink LA">Infra - Ultima/Starlink LA</option>
+                                                        <option value="Infra - GNTU">Infra - GNTU</option>
+                                                    </optgroup>
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-1 sm:col-span-2">
+                                            <label className="text-xs font-medium text-slate-300">Pilih User Assignee di ClickUp (Klik untuk memilih)</label>
+                                            <div className="flex flex-wrap gap-2 pt-1">
+                                                {assigneesList.map((u) => {
+                                                    const isSelected = (assigneeForm.assignee_ids || []).includes(u.id);
+                                                    return (
+                                                        <button
+                                                            key={u.id}
+                                                            type="button"
+                                                            onClick={() => toggleAssigneeFormUser(u.id)}
+                                                            className={`flex items-center gap-2 rounded-2xl border px-3 py-1.5 text-xs font-semibold transition ${
+                                                                isSelected
+                                                                    ? 'border-sky-400/50 bg-sky-500/20 text-sky-200 shadow-md shadow-sky-500/10'
+                                                                    : 'border-white/10 bg-slate-900/60 text-slate-400 hover:border-white/20 hover:text-white'
+                                                            }`}
+                                                        >
+                                                            <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
+                                                                isSelected ? 'bg-sky-400 text-slate-950' : 'bg-slate-800 text-slate-300'
+                                                            }`}>
+                                                                {u.initials || 'U'}
+                                                            </span>
+                                                            <span>{u.name}</span>
+                                                            {isSelected && <span className="text-sky-300 font-bold">✓</span>}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-3 pt-2">
+                                        {editingAssigneeRuleId && (
+                                            <button
+                                                type="button"
+                                                onClick={cancelEditAssigneeRule}
+                                                className="rounded-2xl border border-white/10 bg-slate-900 px-5 py-2.5 text-xs font-semibold text-slate-300 transition hover:bg-slate-800"
+                                            >
+                                                Batal Edit
+                                            </button>
+                                        )}
+
+                                        <button
+                                            type="submit"
+                                            disabled={assigneeSaving}
+                                            className="rounded-2xl bg-sky-500 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {assigneeSaving ? 'Menyimpan...' : (editingAssigneeRuleId ? '💾 Simpan Perubahan Aturan' : '+ Simpan Aturan Assignee')}
+                                        </button>
+                                    </div>
+                                </form>
+
+                                {/* Existing Assignee Rules List */}
+                                <div className="mt-5 overflow-hidden rounded-2xl border border-white/10">
+                                    <table className="min-w-full divide-y divide-white/10 text-sm">
+                                        <thead className="bg-slate-950/80 text-slate-400">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left font-medium">Target Category / App</th>
+                                                <th className="px-4 py-3 text-left font-medium">Assignees (Pengguna ClickUp)</th>
+                                                <th className="px-4 py-3 text-left font-medium">Status</th>
+                                                <th className="px-4 py-3 text-left font-medium">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/10 bg-slate-950/50">
+                                            {/* Static default rows for system rules */}
+                                            <tr className="hover:bg-white/5">
+                                                <td className="px-4 py-3">
+                                                    <span className="rounded-full bg-violet-500/20 px-3 py-1 text-xs font-semibold text-violet-200 border border-violet-500/30">
+                                                        ⚡ Main Apps (Default Sistem)
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        <span className="rounded-full bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-200 border border-sky-500/20">
+                                                            Muhammad Dzaka Murran
+                                                        </span>
+                                                        <span className="rounded-full bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-200 border border-sky-500/20">
+                                                            Support LMD
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className="text-xs text-slate-400 italic">Bawaan Sistem</span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => startEditAssigneeRule({ app_category: 'MAIN', assignee_ids: [113406558, 95553944] })}
+                                                        className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-400/20"
+                                                    >
+                                                        Ubah Aturan
+                                                    </button>
+                                                </td>
+                                            </tr>
+
+                                            <tr className="hover:bg-white/5">
+                                                <td className="px-4 py-3">
+                                                    <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-200 border border-emerald-500/30">
+                                                        🖥️ Infrastructure Apps (Default Sistem)
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        <span className="rounded-full bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-200 border border-sky-500/20">
+                                                            Mukhlis Ibrahim
+                                                        </span>
+                                                        <span className="rounded-full bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-200 border border-sky-500/20">
+                                                            Support LMD
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className="text-xs text-slate-400 italic">Bawaan Sistem</span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => startEditAssigneeRule({ app_category: 'INFRA', assignee_ids: [95657721, 95553944] })}
+                                                        className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-400/20"
+                                                    >
+                                                        Ubah Aturan
+                                                    </button>
+                                                </td>
+                                            </tr>
+
+                                            {/* Dynamic Rules */}
+                                            {assigneeRules.map((rule) => (
+                                                <tr key={rule.id} className="hover:bg-white/5">
+                                                    <td className="px-4 py-3">
+                                                        <span className="rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-200 border border-amber-500/30">
+                                                            {rule.app_category === 'SPECIFIC' ? rule.target_app : rule.app_category}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {(rule.assignee_names || []).map((name, i) => (
+                                                                <span key={i} className="rounded-full bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-200 border border-sky-500/20">
+                                                                    {name}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <span className="rounded-full bg-emerald-400/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                                                            AKTIF
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => startEditAssigneeRule(rule)}
+                                                                className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-400/20"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => deleteAssigneeRule(rule.id)}
+                                                                className="rounded-full border border-rose-400/30 bg-rose-400/10 px-3 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-400/20"
+                                                            >
+                                                                Hapus
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
 
                             {/* === TECHNICIAN MAPPING CARD === */}
@@ -1686,6 +2364,54 @@ export default function Dashboard() {
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-white/10 bg-slate-950/50">
+                                                            {rules.map((rule) => {
+                                                                const ruleConditions = Array.isArray(rule.conditions) && rule.conditions.length > 0
+                                                                    ? rule.conditions
+                                                                    : [{ field: rule.excel_field, operator: 'equals', value: rule.excel_value }];
+                                                                const op = String(rule.operator || 'AND').toUpperCase();
+
+                                                                return (
+                                                                    <tr key={rule.id} className="hover:bg-white/5">
+                                                                        <td className="px-4 py-3">
+                                                                            <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
+                                                                                {rule.source_format}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-4 py-3">
+                                                                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider ${
+                                                                                op === 'OR' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                                                                            }`}>
+                                                                                {op}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-4 py-3">
+                                                                            <div className="space-y-1">
+                                                                                {ruleConditions.map((c, i) => (
+                                                                                    <div key={i} className="flex items-center gap-1.5 text-xs">
+                                                                                        <span className="font-semibold text-violet-200">{c.field}</span>
+                                                                                        <span className="text-slate-400 font-mono text-[11px]">{c.operator || '='}</span>
+                                                                                        <span className="rounded-lg bg-slate-900 px-2 py-0.5 font-medium text-slate-200 border border-white/5">{c.value || '""'}</span>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-4 py-3">
+                                                                            <span className="rounded-full bg-violet-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-violet-200">
+                                                                                {rule.target_module}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-4 py-3">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => deleteRule(rule.id)}
+                                                                                className="rounded-full border border-rose-400/30 bg-rose-400/10 px-3 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-400/20"
+                                                                            >
+                                                                                Hapus
+                                                                            </button>
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            })}
                                                             {importResult.details.map((detail, index) => (
                                                                 <tr key={`${detail.nomor_tiket || 'detail'}-${index}`} className="hover:bg-white/5">
                                                                     <td className="px-4 py-3 text-white">{detail.nomor_tiket || '-'}</td>

@@ -13,5 +13,11 @@ class ClickUpImportRule extends Model
         'excel_value',
         'target_module',
         'source_format',
+        'operator',
+        'conditions',
+    ];
+
+    protected $casts = [
+        'conditions' => 'array',
     ];
 }

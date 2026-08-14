@@ -23,16 +23,26 @@ class ClickUpImportRuleController extends Controller
     {
         $validated = $request->validated();
 
+        $conditions = $validated['conditions'] ?? [
+            [
+                'field' => $validated['excel_field'],
+                'operator' => 'equals',
+                'value' => $validated['excel_value'] ?? '',
+            ]
+        ];
+
         $rule = ClickUpImportRule::create([
             'excel_field' => $validated['excel_field'],
-            'excel_value' => $validated['excel_value'],
+            'excel_value' => $validated['excel_value'] ?? '',
             'target_module' => $validated['target_module'],
             'source_format' => $validated['source_format'],
+            'operator' => $validated['operator'] ?? 'AND',
+            'conditions' => $conditions,
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Rule berhasil disimpan.',
+            'message' => 'Rule routing berhasil disimpan.',
             'data' => $rule,
         ], 201);
     }

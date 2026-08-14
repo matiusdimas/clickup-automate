@@ -453,14 +453,19 @@ class ClickUpSyncService
                     $clickupCreatedTime = data_get($field, 'value');
                 } elseif ($fieldName === 'resolved date ticket' || $fieldName === 'resolved date' || $fieldName === 'resolved time' || $fieldName === 'solved date' || $fieldName === 'solved time' || $fieldId === 'b3f49b69-3095-4687-8b34-ea2fddd95cea') {
                     $clickupResolvedTime = data_get($field, 'value');
-                } elseif ($fieldName === 'apps' || $fieldId === 'aec0cf66-4c70-41e1-9b61-311d4d1a8eb5') {
+                } elseif ($fieldName === 'apps' || $fieldId === ClickUpAppRegistry::FIELD_ID) {
                     $valIndex = data_get($field, 'value');
                     if ($valIndex !== null) {
                         $options = data_get($field, 'type_config.options', []);
-                        $clickupApps = data_get($options, $valIndex . '.name');
-                        if (!$clickupApps) {
-                            $selected = collect($options)->firstWhere('orderindex', $valIndex);
-                            $clickupApps = data_get($selected, 'name');
+                        if (is_string($valIndex) && !is_numeric($valIndex)) {
+                            $selected = collect($options)->firstWhere('id', $valIndex);
+                            $clickupApps = data_get($selected, 'name') ?: ClickUpAppRegistry::getOptionNameById($valIndex);
+                        } else {
+                            $clickupApps = data_get($options, $valIndex . '.name');
+                            if (!$clickupApps) {
+                                $selected = collect($options)->firstWhere('orderindex', (int) $valIndex);
+                                $clickupApps = data_get($selected, 'name') ?: ClickUpAppRegistry::getOptionNameByIndex((int) $valIndex);
+                            }
                         }
                     }
                 } elseif ($fieldName === 'ticket category' || $fieldName === 'category' || $fieldName === 'kategori' || $fieldId === 'ac661cf6-6078-4c36-b5e3-da7c74ddf7a8') {
@@ -583,10 +588,20 @@ class ClickUpSyncService
             }
         }
 
-        return ClickUpTaskCache::query()->updateOrCreate(
+        $taskCache = ClickUpTaskCache::query()->updateOrCreate(
             ['clickup_task_id' => $clickupTaskId],
             $attributes
         );
+
+        // Sync task assignees into clickup_task_assignees table (auto-assigning to ClickUp if empty)
+        try {
+            $assigneeService = new TaskAssigneeSyncService();
+            $assigneeService->syncTaskAssignees($taskCache, $task);
+        } catch (\Throwable $e) {
+            Log::warning("Failed to sync assignees for task {$clickupTaskId}: " . $e->getMessage());
+        }
+
+        return $taskCache;
     }
 
     private function syncModuleListIdFromTask(?ClickUpModule $module, array $task): void
