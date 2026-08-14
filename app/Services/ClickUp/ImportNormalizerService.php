@@ -6,7 +6,7 @@ use Illuminate\Support\Str;
 
 class ImportNormalizerService
 {
-    public function normalizeImportRow(array $row, $rules = [], $techMappings = []): array
+    public function normalizeImportRow(array $row, $rules = [], $techMappings = [], string $sourceFormat = 'ebesha'): array
     {
         $normalized = collect($row)
             ->mapWithKeys(function ($value, $key) {
@@ -114,25 +114,55 @@ class ImportNormalizerService
             data_get($normalized, 'alamat email'),
         ])->first(fn ($value) => filled($value), '');
 
-        $technician = collect([
-            data_get($normalized, 'technician'),
-            data_get($normalized, 'teknisi'),
-            data_get($normalized, 'nama teknisi'),
-            data_get($normalized, 'inisial teknisi'),
-            data_get($normalized, 'technician initial'),
-            data_get($normalized, 'inisial'),
-            data_get($normalized, 'initial'),
-            data_get($normalized, 'created by'),
-            data_get($normalized, 'createdby'),
-            data_get($normalized, 'creator'),
-            data_get($normalized, 'pembuat'),
-            data_get($normalized, 'assigned to'),
-            data_get($normalized, 'assignedto'),
-            data_get($normalized, 'modified by'),
-            data_get($normalized, 'owner'),
-            data_get($normalized, 'pic'),
-            data_get($normalized, 'handler'),
-        ])->first(fn ($value) => filled($value), '');
+        $isSdp = strtolower(trim((string) $sourceFormat)) === 'sdp';
+
+        if ($isSdp) {
+            $technician = collect([
+                data_get($normalized, 'inisial teknisi'),
+                data_get($normalized, 'technician initial'),
+                data_get($normalized, 'inisial'),
+                data_get($normalized, 'initial'),
+                data_get($normalized, 'initials'),
+                data_get($normalized, 'teknisi inisial'),
+                data_get($normalized, 'tech initial'),
+                data_get($normalized, 'inisial handler'),
+                // Fallbacks if initial is empty
+                data_get($normalized, 'technician'),
+                data_get($normalized, 'teknisi'),
+                data_get($normalized, 'nama teknisi'),
+                data_get($normalized, 'created by'),
+                data_get($normalized, 'createdby'),
+                data_get($normalized, 'creator'),
+                data_get($normalized, 'pembuat'),
+                data_get($normalized, 'assigned to'),
+                data_get($normalized, 'assignedto'),
+                data_get($normalized, 'modified by'),
+                data_get($normalized, 'owner'),
+                data_get($normalized, 'pic'),
+                data_get($normalized, 'handler'),
+            ])->first(fn ($value) => filled($value), '');
+        } else {
+            $technician = collect([
+                data_get($normalized, 'technician'),
+                data_get($normalized, 'teknisi'),
+                data_get($normalized, 'nama teknisi'),
+                data_get($normalized, 'inisial teknisi'),
+                data_get($normalized, 'technician initial'),
+                data_get($normalized, 'inisial'),
+                data_get($normalized, 'initial'),
+                data_get($normalized, 'initials'),
+                data_get($normalized, 'created by'),
+                data_get($normalized, 'createdby'),
+                data_get($normalized, 'creator'),
+                data_get($normalized, 'pembuat'),
+                data_get($normalized, 'assigned to'),
+                data_get($normalized, 'assignedto'),
+                data_get($normalized, 'modified by'),
+                data_get($normalized, 'owner'),
+                data_get($normalized, 'pic'),
+                data_get($normalized, 'handler'),
+            ])->first(fn ($value) => filled($value), '');
+        }
 
         if (filled($techMappings) && filled($technician)) {
             $rawTech = strtolower(trim((string) $technician));

@@ -78,4 +78,20 @@ class ImportNormalizerAppMappingTest extends TestCase
         $this->assertEquals('LMD - Louis', $res2['technician']);
         $this->assertEquals('LMD - Yana', $res3['technician']);
     }
+
+    public function test_sdp_source_format_prioritizes_inisial_column_over_full_technician_name(): void
+    {
+        $rowWithBoth = [
+            'nomor_tiket' => 'SDP-2026-99',
+            'technician' => 'Dimas Matius Full',
+            'nama_teknisi' => 'Dimas Matius Full',
+            'inisial' => 'MD',
+        ];
+
+        $normalizedSdp = $this->normalizer->normalizeImportRow($rowWithBoth, [], [], 'sdp');
+        $normalizedEbesha = $this->normalizer->normalizeImportRow($rowWithBoth, [], [], 'ebesha');
+
+        $this->assertEquals('MD', $normalizedSdp['technician']);
+        $this->assertEquals('Dimas Matius Full', $normalizedEbesha['technician']);
+    }
 }
