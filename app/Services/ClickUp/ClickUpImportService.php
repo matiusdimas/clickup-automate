@@ -295,65 +295,48 @@ class ClickUpImportService
                         continue;
                     }
 
-                    // 4. Update Task with bundled custom_fields payload in 1 HTTP call if possible
+                    // 4. Update Main Task properties ONLY if Name or Status changed
                     $remoteTaskData = [
                         'id'     => $localTask->clickup_task_id,
                         'name'   => $newName,
                         'status' => $newStatus,
                     ];
 
-                    $updatePayload = [];
-                    if ($nameDiff)   $updatePayload['name']   = $newName;
-                    if ($statusDiff) $updatePayload['status'] = $newStatus;
+                    if ($hasMainTaskDiff) {
+                        $updatePayload = [];
+                        if ($nameDiff)   $updatePayload['name']   = $newName;
+                        if ($statusDiff) $updatePayload['status'] = $newStatus;
 
-                    if (!empty($customFieldValues)) {
-                        $cfArray = [];
-                        foreach ($customFieldValues as $cfId => $cfVal) {
-                            if (filled($cfVal)) {
-                                $cfArray[] = ['id' => $cfId, 'value' => $cfVal];
-                            }
+                        $response = $this->apiClient->requestWithRetry(
+                            fn () => $this->apiClient->client()->put("/task/{$localTask->clickup_task_id}", $updatePayload)
+                        );
+
+                        if ($response->failed()) {
+                            $results['failed']++;
+                            $results['details'][] = [
+                                'nomor_tiket' => $payload['nomor_tiket'],
+                                'aplikasi'    => $payload['aplikasi'],
+                                'status'      => 'failed',
+                                'message'     => $response->json('err') ?? $response->body(),
+                            ];
+                            continue;
                         }
-                        if (!empty($cfArray)) {
-                            $updatePayload['custom_fields'] = $cfArray;
+
+                        if (is_array($response->json())) {
+                            $remoteTaskData = $response->json();
                         }
                     }
 
-                    $response = $this->apiClient->requestWithRetry(
-                        fn () => $this->apiClient->client()->put("/task/{$localTask->clickup_task_id}", $updatePayload)
-                    );
-
-                    // Fallback to updating individual fields if custom_fields payload failed
-                    if ($response->failed() && isset($updatePayload['custom_fields'])) {
-                        unset($updatePayload['custom_fields']);
-                        if (!empty($updatePayload)) {
-                            $response = $this->apiClient->requestWithRetry(
-                                fn () => $this->apiClient->client()->put("/task/{$localTask->clickup_task_id}", $updatePayload)
+                    // 5. Update ONLY custom fields that actually changed via ClickUp POST /task/{id}/field/{field_id}
+                    foreach ($customFieldValues as $fieldId => $val) {
+                        if (filled($val)) {
+                            $this->apiClient->requestWithRetry(
+                                fn () => $this->apiClient->client()->post("/task/{$localTask->clickup_task_id}/field/{$fieldId}", ['value' => $val])
                             );
                         }
-
-                        foreach ($customFieldValues as $fieldId => $val) {
-                            if (filled($val)) {
-                                $this->apiClient->requestWithRetry(
-                                    fn () => $this->apiClient->client()->post("/task/{$localTask->clickup_task_id}/field/{$fieldId}", ['value' => $val])
-                                );
-                            }
-                        }
-                    } elseif ($response->failed()) {
-                        $results['failed']++;
-                        $results['details'][] = [
-                            'nomor_tiket' => $payload['nomor_tiket'],
-                            'aplikasi'    => $payload['aplikasi'],
-                            'status'      => 'failed',
-                            'message'     => $response->json('err') ?? $response->body(),
-                        ];
-                        continue;
                     }
 
-                    if ($response && is_array($response->json())) {
-                        $remoteTaskData = $response->json();
-                    }
-
-                    // 5. Persist DB Cache & Hash
+                    // 6. Persist DB Cache & Hash
                     $updatedRecord = $this->syncService->upsertCacheFromRemoteTask($remoteTaskData, $module->module_name, $payload);
                     if ($updatedRecord) {
                         $updatedRecord->updateQuietly(['import_hash' => $newHash]);
