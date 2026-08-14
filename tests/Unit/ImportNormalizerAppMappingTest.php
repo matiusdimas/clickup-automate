@@ -26,4 +26,19 @@ class ImportNormalizerAppMappingTest extends TestCase
     {
         $this->assertNull($this->normalizer->mapAppCategory('Unknown App'));
     }
+
+    public function test_normalizer_extracts_technician_from_created_by_column(): void
+    {
+        $excelRow = [
+            'nomor_tiket' => 'LMD/2026/8/6951',
+            'created_by' => 'hendrik.louis@lmd.co.id',
+            'initial_time' => 'Aug 06, 2026 01:56 PM',
+            'subject' => 'Kendala softphone',
+        ];
+
+        $normalized = $this->normalizer->normalizeImportRow($excelRow);
+
+        $this->assertEquals('hendrik.louis@lmd.co.id', $normalized['technician']);
+        $this->assertEquals('Aug 06, 2026 01:56 PM', $normalized['response_date']);
+    }
 }
