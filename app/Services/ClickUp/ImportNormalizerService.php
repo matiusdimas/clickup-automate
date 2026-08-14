@@ -116,20 +116,22 @@ class ImportNormalizerService
 
         $technician = collect([
             data_get($normalized, 'technician'),
+            data_get($normalized, 'teknisi'),
             data_get($normalized, 'nama teknisi'),
+            data_get($normalized, 'inisial teknisi'),
+            data_get($normalized, 'technician initial'),
+            data_get($normalized, 'inisial'),
+            data_get($normalized, 'initial'),
             data_get($normalized, 'created by'),
             data_get($normalized, 'createdby'),
             data_get($normalized, 'creator'),
             data_get($normalized, 'pembuat'),
-            data_get($normalized, 'inisial teknisi'),
-            data_get($normalized, 'technician initial'),
             data_get($normalized, 'assigned to'),
             data_get($normalized, 'assignedto'),
             data_get($normalized, 'modified by'),
             data_get($normalized, 'owner'),
             data_get($normalized, 'pic'),
             data_get($normalized, 'handler'),
-            data_get($normalized, 'inisial'),
         ])->first(fn ($value) => filled($value), '');
 
         if (filled($techMappings) && filled($technician)) {

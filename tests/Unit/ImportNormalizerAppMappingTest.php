@@ -42,6 +42,23 @@ class ImportNormalizerAppMappingTest extends TestCase
         $this->assertEquals('Aug 06, 2026 01:56 PM', $normalized['response_date']);
     }
 
+    public function test_normalizer_extracts_technician_from_sdp_inisial_column(): void
+    {
+        $excelRowSdp = [
+            'nomor_tiket' => 'LMD/2026/3/1001',
+            'inisial' => 'Matius.Prasetia',
+            'subject' => 'Kendala server',
+        ];
+
+        $techMappings = [
+            (object) ['original_name' => 'Matius.Prasetia', 'mapped_name' => 'LMD - Matius'],
+        ];
+
+        $normalized = $this->normalizer->normalizeImportRow($excelRowSdp, [], $techMappings);
+
+        $this->assertEquals('LMD - Matius', $normalized['technician']);
+    }
+
     public function test_normalizer_maps_technician_with_domain_variations(): void
     {
         $techMappings = [
