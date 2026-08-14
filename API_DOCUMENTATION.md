@@ -145,98 +145,17 @@ curl -X GET "http://127.0.0.1:8000/api/clickup/tasks?technician=LMD%20-%20Louis&
   -H "Authorization: Bearer YOUR_API_TOKEN"
 ```
 
-#### Respon JSON (200 OK):
-```json
-{
-  "success": true,
-  "data": {
-    "current_page": 1,
-    "data": [
-      {
-        "id": 15,
-        "clickup_task_id": "86eyd1yk8",
-        "tiket_id": "714815",
-        "name": "#714815 Mohon Sync Chatbot",
-        "tipe_aplikasi": "EBESHA",
-        "aplikasi": "Royal Safari Garden",
-        "status": "Open",
-        "technician": "LMD - Louis",
-        "requestor_name": "RSG",
-        "created_time": "Jun 13, 2026 09:41 PM",
-        "resolved_time": "Jul 29, 2026 12:00 AM",
-        "updated_at": "2026-07-29T07:34:39.000000Z"
-      }
-    ],
-    "first_page_url": "http://127.0.0.1:8000/api/clickup/tasks?page=1",
-    "last_page": 98,
-    "total": 1955
-  }
-}
-```
-
 ---
 
 ### B. Detail Lengkap Tiket (`GET /api/clickup/tasks/{id}`)
 
 Mengambil seluruh field detail tiket berdasarkan **ID Database** (misal `15`), **ClickUp Task ID** (misal `86eyd1yk8`), atau **Nomor Tiket** (misal `714815`).
 
-#### Contoh Request cURL:
-```bash
-curl -X GET "http://127.0.0.1:8000/api/clickup/tasks/714815" \
-  -H "Authorization: Bearer YOUR_API_TOKEN"
-```
-
-#### Respon JSON (200 OK):
-```json
-{
-  "success": true,
-  "data": {
-    "id": 15,
-    "clickup_task_id": "86eyd1yk8",
-    "custom_id": null,
-    "tiket_id": "714815",
-    "name": "#714815 Mohon Sync Chatbot",
-    "tipe_aplikasi": "EBESHA",
-    "aplikasi": "Royal Safari Garden",
-    "status": "Open",
-    "description": "selamat malam tim boleh di cek chatbot auto resolvednya...",
-    "requestor_name": "RSG",
-    "resolution": "Sudah dibantu agar ter resolve otomatis",
-    "technician": "LMD - Louis",
-    "category": "Service Error -> Web Service",
-    "subcategory": "Royal Safari Garden",
-    "item": "eBesha -> Ebesha CRM -> Service Error",
-    "priority": "MEDIUM",
-    "due_by_time": "Jun 14, 2026 09:41 AM",
-    "created_time": "Jun 13, 2026 09:41 PM",
-    "resolved_time": "Jul 29, 2026 12:00 AM",
-    "completed_time": null,
-    "overdue_status": "false",
-    "resolved_overdue": "false",
-    "time_elapsed": "00:00:00",
-    "hold_time": "00:00:00",
-    "response_date": "Jun 13, 2026 09:42 PM",
-    "response_due_date": "Jun 13, 2026 09:51 PM",
-    "sla_response_time": "10",
-    "resolved_due_date": "Jun 14, 2026 09:41 AM",
-    "generate": "EBESHA",
-    "created_at": "2026-07-29T07:34:39.000000Z",
-    "updated_at": "2026-07-29T07:34:39.000000Z"
-  }
-}
-```
-
 ---
 
 ### C. Export Semua Data Tiket (`GET /api/clickup/tasks/all`)
 
 Mengambil seluruh baris data cache tiket (format JSON array) untuk kebutuhan dump data atau synchronizing ke database aplikasi lain.
-
-#### Contoh Request cURL:
-```bash
-curl -X GET "http://127.0.0.1:8000/api/clickup/tasks/all" \
-  -H "Authorization: Bearer YOUR_API_TOKEN"
-```
 
 ---
 
@@ -246,212 +165,117 @@ curl -X GET "http://127.0.0.1:8000/api/clickup/tasks/all" \
 
 Memicu sinkronisasi data terbaru dari ClickUp Views ke database lokal.
 
-#### Request Body (JSON):
-```json
-{
-  "sync_token": "a30d8584-4aea-4df8-b012-65cb1dbc7a4c"
-}
-```
-*(Jika `sync_token` tidak dikirim, backend akan meng-generate token secara otomatis).*
-
-#### Respon JSON (200 OK):
-```json
-{
-  "success": true,
-  "status": "started",
-  "sync_token": "sync-unique-uuid",
-  "message": "Proses sinkronisasi telah dimulai di latar belakang.",
-  "tasks": [
-    {
-      "id": 1,
-      "clickup_task_id": "86eyex29k",
-      "custom_id": null,
-      "tiket_id": "LMD/2026/7/6925",
-      "name": "LMD/2026/7/6925 BSB - Perubahan data akun karyawan cabang",
-      "tipe_aplikasi": "EBESHA",
-      "aplikasi": "BANK SUMSEL BABEL",
-      "status": "Closed",
-      "created_time": "Jul 29, 2026 02:04 PM",
-      "resolved_time": "Jul 29, 2026 12:00 AM",
-      "created_at": "2026-07-29T12:57:15.000000Z",
-      "updated_at": "2026-07-29T13:45:42.000000Z",
-      "description": "Technician: LMD - Louis...",
-      "requestor_name": "BANK SUMSEL BABEL",
-      "resolution": "Sudah disesuaikan nama data karyawan cabang",
-      "technician": "LMD - Louis",
-      "category": "Check Request",
-      "subcategory": "BANK SUMSEL BABEL",
-      "item": "eBesha -> Ebesha CRM",
-      "priority": "MEDIUM",
-      "request_type": "Check Request",
-      "request_status": "Closed",
-      "due_by_time": "Jul 29, 2026 05:00 PM",
-      "completed_time": "Jul 29, 2026 12:00 AM",
-      "overdue_status": "false",
-      "resolved_overdue": "false",
-      "resolved_due_date": "Jul 29, 2026 05:00 PM",
-      "group": "L1 Group",
-      "generate": "EBESHA",
-      "time_elapsed": "00:00:00",
-      "hold_time": "00:00:00",
-      "actual_time": "00:00:00",
-      "response_overdue": "false",
-      "response_date": "Jul 29, 2026 02:05 PM",
-      "response_due_date": "Jul 29, 2026 02:14 PM",
-      "sla_response_time": "10",
-      "sla_resolved_time": "54:00:00"
-    }
-  ]
-}
-```
-
----
-
-### C. Hentikan / Cancel Sync (`POST /api/clickup/sync/cancel` atau `POST /api/clickup/sync/{syncToken}/cancel`)
-
-Menghentikan proses sinkronisasi data yang sedang berjalan secara instan dan melepaskan session lock.
-
-#### Contoh Request cURL:
-```bash
-curl -X POST "http://127.0.0.1:8000/api/clickup/sync/cancel" \
-  -H "Authorization: Bearer YOUR_API_TOKEN"
-```
-
-#### Respon JSON (200 OK):
-```json
-{
-  "success": true,
-  "status": "cancelled",
-  "sync_token": "sync-unique-uuid",
-  "message": "Proses sinkronisasi berhasil dihentikan."
-}
-```
-
----
-
 ### B. Progress Monitoring Sync (`GET /api/clickup/sync/{syncToken}/progress`)
 
 Memantau status dan persentase progress sync yang sedang berjalan.
 
-#### Contoh Request cURL:
-```bash
-curl -X GET "http://127.0.0.1:8000/api/clickup/sync/sync-unique-uuid/progress" \
-  -H "Authorization: Bearer YOUR_API_TOKEN"
-```
+### C. Hentikan / Cancel Sync (`POST /api/clickup/sync/cancel`)
 
-#### Respon JSON (200 OK):
-```json
-{
-  "success": true,
-  "data": {
-    "sync_token": "sync-unique-uuid",
-    "status": "running",
-    "summary": {
-      "total_modules": 1,
-      "completed_modules": 0,
-      "fetched_tasks": 500,
-      "cached_tasks": 500,
-      "progress_percent": 50
-    },
-    "modules": [
-      {
-        "module_name": "IT TICKET LIST",
-        "page": 5,
-        "pages": 20,
-        "fetched": 500,
-        "cached": 500,
-        "status": "running"
-      }
-    ]
-  }
-}
-```
+Menghentikan proses sinkronisasi data yang sedang berjalan.
 
 ---
 
 ## 📥 5. Import Excel File & Monitoring Progress API
 
 ### A. Preview File Excel (`POST /api/clickup/import/upload-preview`)
-
-Mengunggah file Excel/CSV untuk di-parse dan dicek status duplikatnya sebelum di-submit.
-
-#### Request Body (multipart/form-data):
-- `file`: File Excel (`.xlsx`, `.xls`, `.csv`)
-- `source_format`: `ebesha` atau `sdp`
-
-#### Contoh Request cURL:
-```bash
-curl -X POST "http://127.0.0.1:8000/api/clickup/import/upload-preview" \
-  -H "Authorization: Bearer YOUR_API_TOKEN" \
-  -F "file=@/path/to/tiket_import.xlsx" \
-  -F "source_format=ebesha"
-```
-
-#### Respon JSON (200 OK):
-```json
-{
-  "success": true,
-  "data": {
-    "source_format": "ebesha",
-    "detected_headers": ["Nomor Tiket", "Judul Tiket", "Account", "Status"],
-    "total_rows": 434,
-    "ready_rows": 300,
-    "duplicate_rows": 134,
-    "rows": [
-      {
-        "nomor_tiket": "714815",
-        "review_status": "duplicate",
-        "review_reason": "Tiket sudah ada di cache lokal (akan di-update ke ClickUp)"
-      }
-    ]
-  }
-}
-```
+### B. Submit Import Data (`POST /api/clickup/import`)
+### C. Monitoring Progress Loading Bar Import (`GET /api/clickup/import/{importToken}/progress`)
 
 ---
 
-### B. Submit Import Data (`POST /api/clickup/import`)
+## 🔀 6. Advanced Import Routing Rules API (Multi-Condition AND/OR)
 
-Mengirim data tiket hasil preview ke ClickUp API dan menyimpan cache ke DB lokal.
+Digunakan untuk mengelola aturan routing dinamis berbasis kombinasi perkondisian `AND` / `OR` untuk menentukan modul/aplikasi target tiket saat import Excel.
 
-#### Request Body (JSON):
+### A. Fetch List Aturan (`GET /api/clickup/rules`)
+```bash
+curl -X GET "http://127.0.0.1:8000/api/clickup/rules" \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+### B. Tambah / Simpan Aturan Advanced (`POST /api/clickup/rules`)
+Mengirim payload aturan tunggal atau multi-kondisi dengan operator logika `AND` / `OR`.
+
+#### Body JSON Example (Multi-Condition AND/OR):
 ```json
 {
   "source_format": "ebesha",
-  "import_token": "import-token-uuid-1234",
-  "rows": [
+  "logical_operator": "AND",
+  "target_module": "APPS ULTIMA INFRA",
+  "conditions": [
     {
-      "nomor_tiket": "714815",
-      "name": "Mohon Sync Chatbot",
-      "status": "Open",
-      "account": "Royal Safari Garden",
-      "technician": "LMD - Louis"
+      "field": "Account",
+      "operator": "=",
+      "value": "abc"
+    },
+    {
+      "field": "Service Category",
+      "operator": "=",
+      "value": "db"
     }
   ]
 }
 ```
 
-#### Contoh Request cURL:
-```bash
-curl -X POST "http://127.0.0.1:8000/api/clickup/import" \
-  -H "Authorization: Bearer YOUR_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_format": "ebesha",
-    "import_token": "import-token-uuid-1234",
-    "rows": []
-  }'
-```
+#### Supported Operators:
+- `=` (Exact Match)
+- `!=` (Not Equal)
+- `CONTAINS` (Contains Substring)
+
+### C. Hapus Aturan Routing (`DELETE /api/clickup/rules/{id}`)
 
 ---
 
-### C. Monitoring Progress Loading Bar Import (`GET /api/clickup/import/{importToken}/progress`)
+## 👥 7. ClickUp Auto-Assignee Rules & Sync API
 
-Endpoint real-time untuk memantau progress persentase loading bar dan jumlah baris tiket yang sudah berhasil di-import.
+Endpoint ini digunakan untuk mengelola aturan penugasan tim/teknisi ClickUp (Assignees) secara otomatis berdasarkan kategori aplikasi (Main Apps, Infrastructure Apps, atau Spesifik Apps).
+
+### A. Fetch List Aturan Assignee (`GET /api/clickup/assignee-rules`)
+```bash
+curl -X GET "http://127.0.0.1:8000/api/clickup/assignee-rules" \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+### B. Tambah Aturan Penugasan Assignee Baru (`POST /api/clickup/assignee-rules`)
+
+#### Payload Request JSON:
+```json
+{
+  "target_app_type": "specific_apps",
+  "specific_app_name": "Cafeins",
+  "assignee_ids": [113406558, 95553944],
+  "assignee_names": ["Muhammad Dzaka Murran", "Support LMD"]
+}
+```
+
+#### Field `target_app_type`:
+- `main_apps` (Aplikasi Utama)
+- `infra_apps` (Aplikasi Infrastruktur)
+- `specific_apps` (Aplikasi Spesifik misal `Cafeins`, `eCentrix`, dll.)
+
+### C. Update / Edit Aturan Assignee (`PUT /api/clickup/assignee-rules/{id}`)
 
 #### Contoh Request cURL:
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/clickup/import/import-token-uuid-1234/progress" \
+curl -X PUT "http://127.0.0.1:8000/api/clickup/assignee-rules/1" \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_app_type": "main_apps",
+    "assignee_ids": [113406558, 95553944],
+    "assignee_names": ["Muhammad Dzaka Murran", "Support LMD"]
+  }'
+```
+
+### D. Hapus Aturan Assignee (`DELETE /api/clickup/assignee-rules/{id}`)
+
+### E. Trigger Batch Push Assignees ke ClickUp API (`POST /api/clickup/sync-assignees`)
+
+Memicu eksekusi otomatis untuk menugaskan teknisi di server ClickUp API untuk tiket yang masih belum ter-assign.
+
+#### Contoh Request cURL:
+```bash
+curl -X POST "http://127.0.0.1:8000/api/clickup/sync-assignees" \
   -H "Authorization: Bearer YOUR_API_TOKEN"
 ```
 
@@ -459,48 +283,36 @@ curl -X GET "http://127.0.0.1:8000/api/clickup/import/import-token-uuid-1234/pro
 ```json
 {
   "success": true,
-  "data": {
-    "import_token": "import-token-uuid-1234",
-    "status": "running",
-    "processed_rows": 145,
-    "total_rows": 434,
-    "progress_percent": 33
-  }
+  "message": "Sinkronisasi assignees ke ClickUp API selesai. 1 task di-update."
 }
 ```
 
 ---
 
-## 🔀 6. Import Routing Rules API
+## 📱 8. App Options API (`GET /api/clickup/app-options`)
 
-Digunakan untuk mengelola aturan routing kolom Excel ke modul target ClickUp.
+Mengambil daftar seluruh nama aplikasi resmi beserta tipe kategori/kodenya yang terdaftar di sistem.
 
-- `GET /api/clickup/rules` - Ambil daftar semua aturan routing.
-- `POST /api/clickup/rules` - Tambah aturan baru.
-  - **Body JSON**: `{"source_format": "ebesha", "excel_field": "Account", "excel_value": "Royal safari garden", "target_module": "CAFEINS"}`
-- `DELETE /api/clickup/rules/{id}` - Hapus aturan routing berdasarkan ID.
+```bash
+curl -X GET "http://127.0.0.1:8000/api/clickup/app-options" \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
 
 ---
 
-## ⚙️ 7. Module Settings API (ClickUp Views & List IDs)
-
-Digunakan untuk menambah/mengubah target ClickUp View ID & List ID.
+## ⚙️ 9. Module Settings API (ClickUp Views & List IDs)
 
 - `GET /api/clickup/modules` - Ambil daftar modul.
 - `POST /api/clickup/modules` - Tambah modul baru.
-  - **Body JSON**: `{"module_name": "CAFEINS", "clickup_view_id": "view_123", "clickup_list_id": "list_123", "is_active": true}`
 - `PUT /api/clickup/modules/{id}` - Update modul.
 - `DELETE /api/clickup/modules/{id}` - Hapus modul.
 
 ---
 
-## 👤 8. Technician Mappings API
-
-Digunakan untuk memetakan nama/inisial teknisi mentah dari Excel/ClickUp ke nama standar resmi.
+## 👤 10. Technician Mappings API
 
 - `GET /api/clickup/technician-mappings` - Ambil daftar pemetaan teknisi.
 - `POST /api/clickup/technician-mappings` - Tambah pemetaan teknisi.
-  - **Body JSON**: `{"original_name": "Louis", "mapped_name": "LMD - Louis"}`
 - `GET /api/clickup/technician-mappings/{id}` - Detail pemetaan.
 - `PUT /api/clickup/technician-mappings/{id}` - Update pemetaan.
 - `DELETE /api/clickup/technician-mappings/{id}` - Hapus pemetaan.
