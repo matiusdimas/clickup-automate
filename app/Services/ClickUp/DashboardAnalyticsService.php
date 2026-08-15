@@ -8,7 +8,6 @@ use App\Models\ClickUpTaskCache;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Throwable;
 
 class DashboardAnalyticsService
 {
@@ -20,6 +19,7 @@ class DashboardAnalyticsService
 
     /**
      * Compute comprehensive dashboard metrics for the given filter parameters.
+     * Uses single-query conditional aggregation for high performance.
      */
     public function getAnalytics(DashboardFilterDTO $dto): array
     {
@@ -29,22 +29,26 @@ class DashboardAnalyticsService
             $baseQuery = ClickUpTaskCache::query();
             $this->filterService->applyFilters($baseQuery, $dto);
 
-            // 1. Overall Summary Metrics
-            $totalTasks = (clone $baseQuery)->count();
-            $openTasks = (clone $baseQuery)->whereIn(DB::raw('LOWER(status)'), ['open', 'new', 'unassigned'])->count();
-            $inProgressTasks = (clone $baseQuery)->whereIn(DB::raw('LOWER(status)'), ['in progress', 'in-progress', 'work in progress'])->count();
-            $onHoldTasks = (clone $baseQuery)->whereIn(DB::raw('LOWER(status)'), ['on hold', 'on-hold', 'pending', 'stopclock'])->count();
-            $closedTasks = (clone $baseQuery)->whereIn(DB::raw('LOWER(status)'), ['closed', 'resolved', 'completed', 'done'])->count();
+            // 1. Overall Summary Metrics (Single aggregate query)
+            $summaryAgg = (clone $baseQuery)
+                ->selectRaw("
+                    COUNT(*) as total_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('open', 'new', 'unassigned') THEN 1 ELSE 0 END) as open_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('in progress', 'in-progress', 'work in progress') THEN 1 ELSE 0 END) as in_progress_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('on hold', 'on-hold', 'pending', 'stopclock') THEN 1 ELSE 0 END) as on_hold_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('closed', 'resolved', 'completed', 'done') THEN 1 ELSE 0 END) as closed_tasks,
+                    SUM(CASE WHEN (overdue_status = 'overdue' OR resolved_overdue = 'true' OR response_overdue = 'overdue') THEN 1 ELSE 0 END) as overdue_tasks
+                ")
+                ->first();
+
+            $totalTasks = (int) ($summaryAgg->total_tasks ?? 0);
+            $openTasks = (int) ($summaryAgg->open_tasks ?? 0);
+            $inProgressTasks = (int) ($summaryAgg->in_progress_tasks ?? 0);
+            $onHoldTasks = (int) ($summaryAgg->on_hold_tasks ?? 0);
+            $closedTasks = (int) ($summaryAgg->closed_tasks ?? 0);
+            $overdueTasks = (int) ($summaryAgg->overdue_tasks ?? 0);
 
             $resolutionRate = $totalTasks > 0 ? round(($closedTasks / $totalTasks) * 100, 1) : 0.0;
-
-            $overdueTasks = (clone $baseQuery)
-                ->where(function ($q) {
-                    $q->where('overdue_status', 'overdue')
-                      ->orWhere('resolved_overdue', 'true')
-                      ->orWhere('response_overdue', 'overdue');
-                })->count();
-
             $lastSyncedAt = ClickUpModule::query()->whereNotNull('last_synced_at')->max('last_synced_at');
 
             $summary = [
@@ -63,24 +67,30 @@ class DashboardAnalyticsService
                 'month' => $dto->month,
             ];
 
-            // 2. Breakdown by Tipe Aplikasi (Main Modules)
+            // 2. Breakdown by Tipe Aplikasi / Main Modules (Single aggregate query with GROUP BY)
             $byModule = (clone $baseQuery)
-                ->select('tipe_aplikasi', DB::raw('count(*) as total'))
+                ->select('tipe_aplikasi')
+                ->selectRaw("
+                    COUNT(*) as total_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('open', 'new', 'unassigned') THEN 1 ELSE 0 END) as open_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('in progress', 'in-progress', 'work in progress') THEN 1 ELSE 0 END) as in_progress_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('on hold', 'on-hold', 'pending', 'stopclock') THEN 1 ELSE 0 END) as on_hold_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('closed', 'resolved', 'completed', 'done') THEN 1 ELSE 0 END) as closed_tasks
+                ")
                 ->whereNotNull('tipe_aplikasi')
                 ->where('tipe_aplikasi', '!=', '')
                 ->groupBy('tipe_aplikasi')
-                ->orderByDesc('total')
+                ->orderByDesc('total_tasks')
                 ->get()
-                ->map(function ($item) use ($baseQuery, $totalTasks) {
-                    $modName = $item->tipe_aplikasi;
-                    $modTotal = (int) $item->total;
-                    $modClosed = (clone $baseQuery)->where('tipe_aplikasi', $modName)->whereIn(DB::raw('LOWER(status)'), ['closed', 'resolved', 'completed', 'done'])->count();
-                    $modOpen = (clone $baseQuery)->where('tipe_aplikasi', $modName)->whereIn(DB::raw('LOWER(status)'), ['open', 'new', 'unassigned'])->count();
-                    $modInProgress = (clone $baseQuery)->where('tipe_aplikasi', $modName)->whereIn(DB::raw('LOWER(status)'), ['in progress', 'in-progress'])->count();
-                    $modOnHold = (clone $baseQuery)->where('tipe_aplikasi', $modName)->whereIn(DB::raw('LOWER(status)'), ['on hold', 'on-hold', 'stopclock'])->count();
+                ->map(function ($item) use ($totalTasks) {
+                    $modTotal = (int) $item->total_tasks;
+                    $modClosed = (int) $item->closed_tasks;
+                    $modOpen = (int) $item->open_tasks;
+                    $modInProgress = (int) $item->in_progress_tasks;
+                    $modOnHold = (int) $item->on_hold_tasks;
 
                     return [
-                        'tipe_aplikasi' => $modName,
+                        'tipe_aplikasi' => $item->tipe_aplikasi,
                         'total_tasks' => $modTotal,
                         'open_tasks' => $modOpen,
                         'in_progress_tasks' => $modInProgress,
@@ -91,18 +101,22 @@ class DashboardAnalyticsService
                     ];
                 });
 
-            // 3. Breakdown by Detail Aplikasi (Sub-Apps)
+            // 3. Breakdown by Detail Aplikasi / Sub-Apps (Single aggregate query with GROUP BY)
             $byAplikasi = (clone $baseQuery)
-                ->select('aplikasi', 'tipe_aplikasi', DB::raw('count(*) as total'))
+                ->select('aplikasi', 'tipe_aplikasi')
+                ->selectRaw("
+                    COUNT(*) as total_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('closed', 'resolved', 'completed', 'done') THEN 1 ELSE 0 END) as closed_tasks
+                ")
                 ->whereNotNull('aplikasi')
                 ->where('aplikasi', '!=', '')
                 ->groupBy('aplikasi', 'tipe_aplikasi')
-                ->orderByDesc('total')
+                ->orderByDesc('total_tasks')
                 ->limit(15)
                 ->get()
-                ->map(function ($item) use ($baseQuery) {
-                    $appTotal = (int) $item->total;
-                    $appClosed = (clone $baseQuery)->where('aplikasi', $item->aplikasi)->whereIn(DB::raw('LOWER(status)'), ['closed', 'resolved', 'completed', 'done'])->count();
+                ->map(function ($item) {
+                    $appTotal = (int) $item->total_tasks;
+                    $appClosed = (int) $item->closed_tasks;
 
                     return [
                         'aplikasi' => $item->aplikasi,
@@ -123,17 +137,19 @@ class DashboardAnalyticsService
             ];
 
             $byStatus = (clone $baseQuery)
-                ->select('status', DB::raw('count(*) as total'))
+                ->select('status')
+                ->selectRaw('COUNT(*) as total_tasks')
                 ->whereNotNull('status')
                 ->where('status', '!=', '')
                 ->groupBy('status')
                 ->get()
                 ->map(function ($item) use ($totalTasks, $statusColors) {
                     $st = strtolower(trim((string) $item->status));
+                    $count = (int) $item->total_tasks;
                     return [
                         'status' => $item->status,
-                        'total_tasks' => (int) $item->total,
-                        'percentage' => $totalTasks > 0 ? round(((int) $item->total / $totalTasks) * 100, 1) : 0.0,
+                        'total_tasks' => $count,
+                        'percentage' => $totalTasks > 0 ? round(($count / $totalTasks) * 100, 1) : 0.0,
                         'color' => $statusColors[$st] ?? '#64748B',
                     ];
                 });
@@ -147,36 +163,41 @@ class DashboardAnalyticsService
             ];
 
             $byPriority = (clone $baseQuery)
-                ->select('priority', DB::raw('count(*) as total'))
+                ->select('priority')
+                ->selectRaw('COUNT(*) as total_tasks')
                 ->groupBy('priority')
-                ->orderByDesc('total')
+                ->orderByDesc('total_tasks')
                 ->get()
                 ->map(function ($item) use ($totalTasks, $priorityColors) {
                     $prio = strtolower(trim((string) $item->priority)) ?: 'unassigned';
+                    $count = (int) $item->total_tasks;
                     return [
                         'priority' => filled($item->priority) ? ucfirst($item->priority) : 'Unassigned',
-                        'total_tasks' => (int) $item->total,
-                        'percentage' => $totalTasks > 0 ? round(((int) $item->total / $totalTasks) * 100, 1) : 0.0,
+                        'total_tasks' => $count,
+                        'percentage' => $totalTasks > 0 ? round(($count / $totalTasks) * 100, 1) : 0.0,
                         'color' => $priorityColors[$prio] ?? '#94A3B8',
                     ];
                 });
 
-            // 6. Breakdown by Technician (Top 10)
+            // 6. Breakdown by Technician (Top 10 - Single aggregate query with GROUP BY)
             $byTechnician = (clone $baseQuery)
-                ->select('technician', DB::raw('count(*) as total'))
+                ->select('technician')
+                ->selectRaw("
+                    COUNT(*) as total_tasks,
+                    SUM(CASE WHEN LOWER(status) IN ('closed', 'resolved', 'completed', 'done') THEN 1 ELSE 0 END) as closed_tasks
+                ")
                 ->whereNotNull('technician')
                 ->where('technician', '!=', '')
                 ->groupBy('technician')
-                ->orderByDesc('total')
+                ->orderByDesc('total_tasks')
                 ->limit(10)
                 ->get()
-                ->map(function ($item) use ($baseQuery) {
-                    $techName = $item->technician;
-                    $techTotal = (int) $item->total;
-                    $techClosed = (clone $baseQuery)->where('technician', $techName)->whereIn(DB::raw('LOWER(status)'), ['closed', 'resolved', 'completed', 'done'])->count();
+                ->map(function ($item) {
+                    $techTotal = (int) $item->total_tasks;
+                    $techClosed = (int) $item->closed_tasks;
 
                     return [
-                        'technician' => $techName,
+                        'technician' => $item->technician,
                         'total_tasks' => $techTotal,
                         'closed_tasks' => $techClosed,
                         'open_tasks' => max(0, $techTotal - $techClosed),

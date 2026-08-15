@@ -16,8 +16,8 @@ class CheckApiAuth
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // 1. Check for static API_BEARER_TOKEN from .env
-        $staticToken = env('API_BEARER_TOKEN');
+        // 1. Check for static API_BEARER_TOKEN from .env or config
+        $staticToken = config('services.api.token') ?: env('API_BEARER_TOKEN');
         if (!empty($staticToken) && ($request->bearerToken() === $staticToken || $request->header('X-Api-Key') === $staticToken)) {
             return $next($request);
         }

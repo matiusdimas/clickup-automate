@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('clickup')->middleware(\App\Http\Middleware\CheckApiAuth::class)->group(function () {
     Route::get('/dashboard', [DashboardApiController::class, 'index']);
+    Route::get('/analytics', [DashboardApiController::class, 'index']);
     Route::get('/app-options', [ClickUpAppOptionController::class, 'index']);
     
     // Modules & Overview
