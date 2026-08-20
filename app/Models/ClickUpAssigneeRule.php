@@ -9,6 +9,8 @@ class ClickUpAssigneeRule extends Model
 {
     use HasFactory;
 
+    protected $table = 'clickup_assignee_rules';
+
     protected $fillable = [
         'rule_name',
         'app_category',
