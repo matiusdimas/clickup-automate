@@ -79,6 +79,7 @@ class ClickUpSyncService
 
     public function runSync(string $syncToken): void
     {
+        @ini_set('memory_limit', '512M');
         set_time_limit(0);
 
         try {
@@ -243,7 +244,8 @@ class ClickUpSyncService
                 $progress = $this->syncProgressFromStates($syncToken, $moduleStates, $cachedTasks, $fetchedTasks);
             }
 
-                usleep(200000);
+                gc_collect_cycles();
+                usleep(150000);
             }
 
             $this->syncProgressFromStates($syncToken, $moduleStates, $cachedTasks, $fetchedTasks, 'done');
@@ -593,10 +595,10 @@ class ClickUpSyncService
             $attributes
         );
 
-        // Sync task assignees into clickup_task_assignees table (auto-assigning to ClickUp if empty)
+        // Sync task assignees into clickup_task_assignees table locally (auto-assigning from rules without blocking HTTP calls during bulk cache sync)
         try {
             $assigneeService = new TaskAssigneeSyncService();
-            $assigneeService->syncTaskAssignees($taskCache, $task);
+            $assigneeService->syncTaskAssignees($taskCache, $task, false);
         } catch (\Throwable $e) {
             Log::warning("Failed to sync assignees for task {$clickupTaskId}: " . $e->getMessage());
         }

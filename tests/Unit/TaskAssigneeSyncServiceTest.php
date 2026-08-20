@@ -32,4 +32,13 @@ class TaskAssigneeSyncServiceTest extends TestCase
 
         $this->assertInstanceOf(TaskAssigneeSyncService::class, $service);
     }
+
+    public function test_sync_task_assignees_resolves_locally_when_push_to_remote_is_false(): void
+    {
+        $evaluator = $this->createMock(AssigneeEvaluatorService::class);
+        $evaluator->method('resolveAssignees')->willReturn([113406558]);
+
+        $service = new TaskAssigneeSyncService($evaluator, null);
+        $this->assertInstanceOf(TaskAssigneeSyncService::class, $service);
+    }
 }

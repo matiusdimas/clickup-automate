@@ -23,13 +23,16 @@ class TaskAssigneeSyncService
      * Synchronize task assignees.
      * If remote task has assignees, persist them locally.
      * If local DB already has assignees for this task, PRESERVE them (do NOT overwrite).
-     * If task assignees are completely empty, resolve assignees and push to ClickUp API once.
+     * If task assignees are completely empty:
+     *   - If $pushToRemote is true, resolve assignees and push to ClickUp API.
+     *   - If $pushToRemote is false (default for bulk cache sync), resolve assignees from rules and persist locally.
      *
      * @param ClickUpTaskCache $taskCache
      * @param array<string, mixed> $remoteTaskData
+     * @param bool $pushToRemote
      * @return array<int, int>
      */
-    public function syncTaskAssignees(ClickUpTaskCache $taskCache, array $remoteTaskData = []): array
+    public function syncTaskAssignees(ClickUpTaskCache $taskCache, array $remoteTaskData = [], bool $pushToRemote = false): array
     {
         $remoteAssignees = $remoteTaskData['assignees'] ?? [];
 
@@ -48,8 +51,20 @@ class TaskAssigneeSyncService
             return $existingLocalAssignees->pluck('clickup_user_id')->toArray();
         }
 
-        // 3. Task assignees are empty everywhere -> Resolve & Push to ClickUp API 1x
-        return $this->pushAssigneesToClickUp($taskCache, false);
+        // 3. If explicit pushToRemote is requested, push to ClickUp API
+        if ($pushToRemote) {
+            return $this->pushAssigneesToClickUp($taskCache, false);
+        }
+
+        // 4. Otherwise persist resolved assignees locally without blocking external HTTP API calls
+        $appName = $taskCache->aplikasi ?? '';
+        $resolvedAssigneeIds = $this->assigneeEvaluator->resolveAssignees($appName);
+
+        if (!empty($resolvedAssigneeIds)) {
+            return $this->persistResolvedAssignees($taskCache, $resolvedAssigneeIds);
+        }
+
+        return [];
     }
 
     /**
